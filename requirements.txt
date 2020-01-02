@@ -1,0 +1,5 @@
+discord.py
+requests
+pytz
+python-dotenv
+sqlite_utils
