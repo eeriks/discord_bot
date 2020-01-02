@@ -107,8 +107,8 @@ class MyClient(discord.Client):
 
     async def on_ready(self):
         print('Client loaded')
-        print(self.user.name)
-        print(self.user.id)
+        # print(self.user.name)
+        # print(self.user.id)
         print('------')
 
     async def report_hunted_medals(self):
@@ -120,7 +120,7 @@ class MyClient(discord.Client):
             for bid, battle in r.get('battles', {}).items():
                 for div in battle.get('div', {}).values():
                     if div['stats'] and not div['end']:
-                        for side, side_data in div['stats']:
+                        for side, side_data in div['stats'].items():
                             if side_data and side_data['citizenId'] in hunted_ids:
                                 pid = side_data['citizenId']
                                 medal_key = (pid, bid, div['div'], battle[side]['id'], side_data['damage'])
@@ -151,8 +151,8 @@ if __name__ == "__main__":
     @bot.event
     async def on_ready():
         print('Bot loaded')
-        print(bot.user.name)
-        print(bot.user.id)
+        # print(bot.user.name)
+        # print(bot.user.id)
         print('------')
 
 
