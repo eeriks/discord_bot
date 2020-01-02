@@ -1,4 +1,4 @@
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Optional
 
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
@@ -26,12 +26,13 @@ class DiscordDB:
                                   pk="id", not_null={"id", "member_id", "player_id"})
             self._db['hunted'].create_index(["member_id", "player_id"], unique=True)
 
-        if "medals" not in self._db.table_names():
-            self._db.create_table("medals",
-                                  dict(id=int, player_id=int, battle_id=int, division_id=int, side_id=int, damage=int),
-                                  not_null={"id", "player_id", "battle_id", "division_id", "side_id", "damage"},
-                                  pk="id", defaults={"damage": 0})
-            self._db['medals'].create_index(["player_id", "battle_id", "division_id", "side_id"], unique=True)
+        if "medals" in self._db.table_names():
+            self._db['medals'].drop()
+        self._db.create_table("medals",
+                              dict(id=int, player_id=int, battle_id=int, division_id=int, side_id=int, damage=int),
+                              not_null={"id", "player_id", "battle_id", "division_id", "side_id", "damage"},
+                              pk="id", defaults={"damage": 0})
+        self._db['medals'].create_index(["player_id", "battle_id", "division_id", "side_id"], unique=True)
 
         if "hunted_players" not in self._db.view_names():
             self._db.create_view("hunted_players", "select distinct player_id from hunted")
@@ -49,7 +50,7 @@ class DiscordDB:
 
     # Player methods
 
-    def get_player(self, pid: int) -> Union[Dict[str, Union[int, str]], None]:
+    def get_player(self, pid: int) -> Optional[Dict[str, Union[int, str]]]:
         """Get Player
 
         :param pid: int Player ID

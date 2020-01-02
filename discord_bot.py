@@ -31,6 +31,7 @@ COUNTRIES = {1: 'Romania', 9: 'Brazil', 10: 'Italy', 11: 'France', 12: 'Germany'
              78: 'Colombia', 79: 'Republic of Macedonia (FYROM)', 80: 'Montenegro', 81: 'Republic of China (Taiwan)',
              82: 'Cyprus', 83: 'Belarus', 84: 'New Zealand', 164: 'Saudi Arabia', 165: 'Egypt',
              166: 'United Arab Emirates', 167: 'Albania', 168: 'Georgia', 169: 'Armenia', 170: 'Nigeria', 171: 'Cuba'}
+
 FLAGS = {1: 'flag_ro', 9: 'flag_br', 10: 'flag_it', 11: 'flag_fr', 12: 'flag_de', 13: 'flag_hu', 14: 'flag_cn',
          15: 'flag_sp', 23: 'flag_ca', 24: 'flag_us', 26: 'flag_mx', 27: 'flag_ar', 28: 'flag_ve', 29: 'flag_gb',
          30: 'flag_ch', 31: 'flag_nl', 32: 'flag_be', 33: 'flag_at', 34: 'flag_cz', 35: 'flag_pl', 36: 'flag_sk',
@@ -123,18 +124,21 @@ class MyClient(discord.Client):
                         for side, side_data in div['stats'].items():
                             if side_data and side_data['citizenId'] in hunted_ids:
                                 pid = side_data['citizenId']
-                                medal_key = (pid, bid, div['div'], battle[side]['id'], side_data['damage'])
+                                medal_key = (pid, battle['id'], div['div'], battle[side]['id'], side_data['damage'])
                                 if not DB.check_medal(*medal_key):
                                     for member in DB.get_members_to_notify(pid):
+
                                         format_data = dict(author=member, player=DB.get_player(pid)['name'], battle=bid,
                                                            region=battle.get('region').get('name'),
-                                                           division=div, dmg=side_data['damage'], side=COUNTRIES[side])
+                                                           division=div['div'], dmg=side_data['damage'],
+                                                           side=COUNTRIES[battle[side]['id']])
+
                                         await self.get_channel(603527159109124096).send(
-                                            "<@{author}> {player} detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
+                                            "<@{author}> **{player}** detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
                                             "https://www.erepublik.com/en/military/battlefield/{battle}".format(
                                                 **format_data)
                                         )
-                                    DB.add_reported_medal(pid, bid, div, side, side_data['damage'])
+                                    DB.add_reported_medal(*medal_key)
             sleep_seconds = r.get('last_updated') + 60 - self.timestamp
             await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
 
