@@ -31,6 +31,17 @@ COUNTRIES = {1: 'Romania', 9: 'Brazil', 10: 'Italy', 11: 'France', 12: 'Germany'
              78: 'Colombia', 79: 'Republic of Macedonia (FYROM)', 80: 'Montenegro', 81: 'Republic of China (Taiwan)',
              82: 'Cyprus', 83: 'Belarus', 84: 'New Zealand', 164: 'Saudi Arabia', 165: 'Egypt',
              166: 'United Arab Emirates', 167: 'Albania', 168: 'Georgia', 169: 'Armenia', 170: 'Nigeria', 171: 'Cuba'}
+FLAGS = {1: 'flag_ro', 9: 'flag_br', 10: 'flag_it', 11: 'flag_fr', 12: 'flag_de', 13: 'flag_hu', 14: 'flag_cn',
+         15: 'flag_sp', 23: 'flag_ca', 24: 'flag_us', 26: 'flag_mx', 27: 'flag_ar', 28: 'flag_ve', 29: 'flag_gb',
+         30: 'flag_ch', 31: 'flag_nl', 32: 'flag_be', 33: 'flag_at', 34: 'flag_cz', 35: 'flag_pl', 36: 'flag_sk',
+         37: 'flag_no', 38: 'flag_se', 39: 'flag_fi', 40: 'flag_ua', 41: 'flag_ru', 42: 'flag_bg', 43: 'flag_tr',
+         44: 'flag_gr', 45: 'flag_jp', 47: 'flag_sk', 48: 'flag_in', 49: 'flag_id', 50: 'flag_au', 51: 'flag_za',
+         52: 'flag_md', 53: 'flag_pt', 54: 'flag_ie', 55: 'flag_de', 56: 'flag_ir', 57: 'flag_pk', 58: 'flag_il',
+         59: 'flag_th', 61: 'flag_si', 63: 'flag_hr', 64: 'flag_cl', 65: 'flag_sr', 66: 'flag_my', 67: 'flag_ph',
+         68: 'flag_sg', 69: 'flag_ba', 70: 'flag_ee', 71: 'flag_lv', 72: 'flag_lt', 73: 'flag_kp', 74: 'flag_uy',
+         75: 'flag_py', 76: 'flag_bo', 77: 'flag_pe', 78: 'flag_co', 79: 'flag_mk', 80: 'flag_me', 81: 'flag_tw',
+         82: 'flag_cy', 83: 'flag_by', 84: 'flag_nz', 164: 'flag_sa', 165: 'flag_eg', 166: 'flag_ae', 167: 'flag_al',
+         168: 'flag_ge', 169: 'flag_am', 170: 'flag_ng', 171: 'flag_cu'}
 
 
 __last_battle_request = None
@@ -71,10 +82,13 @@ def get_medals(division: int):
                 for division_data in battle.get('div', {}).values():
                     if not division_data.get('end') and division_data.get('div') == division:
                         for side, stat in division_data['stats'].items():
+                            data = dict(id=battle.get('id'), country_id=battle.get(side).get('id'),
+                                        time=request_time - start_time, dmg=0)
                             if stat:
-                                yield dict(
-                                    id=battle.get('id'), country=COUNTRIES[battle.get('inv').get('id')],
-                                    dmg=division_data['stats'][side]['damage'], time=request_time - start_time)
+                                data.update(dmg=division_data['stats'][side]['damage'])
+                                yield data
+                            else:
+                                yield data
 
 
 class MyClient(discord.Client):
@@ -99,10 +113,8 @@ class MyClient(discord.Client):
 
     async def report_medal(self, pid: int, bid: int, div: int, side: int, dmg: int, region_name: str):
         for member in DB.get_members_to_notify(pid):
-            format_data = dict(author=member, player=DB.get_player(pid)['name'], battle=bid,
-                               region=region_name,
-                               division=div, dmg=dmg,
-                               side=COUNTRIES[side])
+            format_data = dict(author=member, player=DB.get_player(pid)['name'], battle=bid, region=region_name,
+                               division=div, dmg=dmg, side=COUNTRIES[side])
             await self.get_channel(603527159109124096).send(
                 "<@{author}> {player} detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
                 "https://www.erepublik.com/en/military/battlefield/{battle}".format(**format_data)
@@ -193,12 +205,14 @@ if __name__ == "__main__":
         cheap_bhs = []  # Battle id, Side, damage, round time
         for division_data in get_medals(division):
             if division_data['dmg'] < damage:
+                division_data['flag'] = FLAGS[division_data['country_id']]
+                division_data['country'] = COUNTRIES[division_data['country_id']]
                 cheap_bhs.append(division_data)
 
         if cheap_bhs:
             cheap_bhs = sorted(cheap_bhs, key=lambda _: _['time'])
             cheap_bhs.reverse()
-            msg = "\n".join(["{dmg:,d}dmg medal for {country}, {time} round time "
+            msg = "\n".join(["{dmg:,d}dmg for :{flag}: {country}, {time} round time "
                              "https://www.erepublik.com/en/military/battlefield/{id}".format(**bh) for bh in cheap_bhs])
             if len(msg) > 2000:
                 msg = "\n".join(msg[:2000].split('\n')[:-1])

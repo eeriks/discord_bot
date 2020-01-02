@@ -14,31 +14,38 @@ class DiscordDB:
             self._db = Database(memory=True)
         else:
             self._db = Database(self._name)
-        self._db.create_table("member", {"id": int, "name": str, "mention_number": int},
-                              pk="id", not_null={"id", "name", "mention_number"})
+        if "member" not in self._db.table_names():
+            self._db.create_table("member", {"id": int, "name": str, "mention_number": int},
+                                  pk="id", not_null={"id", "name", "mention_number"})
 
-        self._db.create_table("player", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
+        if "player" not in self._db.table_names():
+            self._db.create_table("player", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
 
-        self._db.create_table("hunted", {"id": int, "member_id": int, "player_id": int},
-                              pk="id", not_null={"id", "member_id", "player_id"})
+        if "hunted" not in self._db.table_names():
+            self._db.create_table("hunted", {"id": int, "member_id": int, "player_id": int},
+                                  pk="id", not_null={"id", "member_id", "player_id"})
+            self._db['hunted'].create_index(["member_id", "player_id"], unique=True)
 
-        self._db.create_table("medals", not_null={"id", "player_id", "battle_id", "division_id", "side_id", "damage"},
-                              columns=dict(id=int, player_id=int, battle_id=int, division_id=int, side_id=int,
-                                           damage=int), pk="id", defaults={"damage": 0})
-        self._db.create_view("hunted_players", "select distinct player_id from hunted")
+        if "medals" not in self._db.table_names():
+            self._db.create_table("medals",
+                                  dict(id=int, player_id=int, battle_id=int, division_id=int, side_id=int, damage=int),
+                                  not_null={"id", "player_id", "battle_id", "division_id", "side_id", "damage"},
+                                  pk="id", defaults={"damage": 0})
+            self._db['medals'].create_index(["player_id", "battle_id", "division_id", "side_id"], unique=True)
+
+        if "hunted_players" not in self._db.view_names():
+            self._db.create_view("hunted_players", "select distinct player_id from hunted")
 
         self._db.add_foreign_keys([("hunted", "member_id", "member", "id"),
                                    ("hunted", "player_id", "player", "id"),
                                    ("medals", "player_id", "player", "id")])
+        self._db.vacuum()
 
         self.member = self._db.table("member")
         self.player = self._db.table("player")
         self.hunted = self._db.table("hunted")
         self.medals = self._db.table("medals")
         self.hunted_players = self._db.table("hunted_players")
-
-        self.medals.create_index(["player_id", "battle_id", "division_id", "side_id"], unique=True)
-        self.hunted.create_index(["member_id", "player_id"], unique=True)
 
     # Player methods
 
@@ -159,7 +166,7 @@ class DiscordDB:
         return True
 
     def delete_medals(self, bid: List[int]):
-        self.medals.delete_where("battle_id in (%s)" % "?"*len(bid), bid)
+        self.medals.delete_where("battle_id in (%s)" % "?" * len(bid), bid)
         return True
 
     def check_hunt(self, pid: int, member_id: int) -> bool:
