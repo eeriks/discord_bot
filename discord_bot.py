@@ -111,16 +111,6 @@ class MyClient(discord.Client):
         print(self.user.id)
         print('------')
 
-    async def report_medal(self, pid: int, bid: int, div: int, side: int, dmg: int, region_name: str):
-        for member in DB.get_members_to_notify(pid):
-            format_data = dict(author=member, player=DB.get_player(pid)['name'], battle=bid, region=region_name,
-                               division=div, dmg=dmg, side=COUNTRIES[side])
-            await self.get_channel(603527159109124096).send(
-                "<@{author}> {player} detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
-                "https://www.erepublik.com/en/military/battlefield/{battle}".format(**format_data)
-            )
-        DB.add_reported_medal(pid, bid, div, side, dmg)
-
     async def report_hunted_medals(self):
         await self.wait_until_ready()
 
@@ -130,16 +120,21 @@ class MyClient(discord.Client):
             for bid, battle in r.get('battles', {}).items():
                 for div in battle.get('div', {}).values():
                     if div['stats'] and not div['end']:
-                        if div['stats']['inv'] and div['stats']['inv']['citizenId'] in hunted_ids:
-                            pid = div['stats']['inv']['citizenId']
-                            medal_key = (pid, bid, div['div'], battle['inv']['id'], div['stats']['inv']['damage'])
-                            if not DB.check_medal(*medal_key):
-                                await self.report_medal(*medal_key, battle.get('region').get('name'))
-                        if div['stats']['def'] and div['stats']['def']['citizenId'] in hunted_ids:
-                            pid = div['stats']['def']['citizenId']
-                            medal_key = (pid, bid, div['div'], battle['def']['id'], div['stats']['def']['damage'])
-                            if DB.check_medal(*medal_key):
-                                await self.report_medal(*medal_key, battle.get('region').get('name'))
+                        for side, side_data in div['stats']:
+                            if side_data and side_data['citizenId'] in hunted_ids:
+                                pid = side_data['citizenId']
+                                medal_key = (pid, bid, div['div'], battle[side]['id'], side_data['damage'])
+                                if not DB.check_medal(*medal_key):
+                                    for member in DB.get_members_to_notify(pid):
+                                        format_data = dict(author=member, player=DB.get_player(pid)['name'], battle=bid,
+                                                           region=battle.get('region').get('name'),
+                                                           division=div, dmg=side_data['damage'], side=COUNTRIES[side])
+                                        await self.get_channel(603527159109124096).send(
+                                            "<@{author}> {player} detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
+                                            "https://www.erepublik.com/en/military/battlefield/{battle}".format(
+                                                **format_data)
+                                        )
+                                    DB.add_reported_medal(pid, bid, div, side, side_data['damage'])
             sleep_seconds = r.get('last_updated') + 60 - self.timestamp
             await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
 
