@@ -12,6 +12,7 @@ import pytz
 import requests
 from discord.ext import commands
 from dotenv import load_dotenv
+from sqlite_utils.db import NotFoundError
 
 from db import DiscordDB
 
@@ -72,7 +73,7 @@ def timestamp_to_datetime(timestamp: int) -> datetime.datetime:
 def get_battle_page():
     global __last_battle_update_timestamp, __last_battle_request
     if int(datetime.datetime.now().timestamp()) >= __last_battle_update_timestamp + 60:
-        r = requests.get('https://www.erepublik.com/en/military/campaignsJson/list').json()
+        r = requests.get('https://erep.lv/battles.json').json()
         __last_battle_request = r
         __last_battle_update_timestamp = r.get('last_updated', int(datetime.datetime.now().timestamp()))
     return __last_battle_request
@@ -134,37 +135,42 @@ class MyClient(discord.Client):
 
     async def report_hunted_medals(self):
         await self.wait_until_ready()
-
         while not self.is_closed():
-            r = get_battle_page()
-            hunted_ids = DB.get_hunted_player_ids()
-            for bid, battle in r.get('battles', {}).items():
-                for div in battle.get('div', {}).values():
-                    if div['stats'] and not div['end']:
-                        for side, side_data in div['stats'].items():
-                            if side_data and side_data['citizenId'] in hunted_ids:
-                                pid = side_data['citizenId']
-                                medal_key = (pid, battle['id'], div['div'], battle[side]['id'], side_data['damage'])
-                                if not DB.check_medal(*medal_key):
-                                    for member in DB.get_members_to_notify(pid):
+            try:
+                r = get_battle_page()
+                hunted_ids = DB.get_hunted_player_ids()
+                for bid, battle in r.get('battles', {}).items():
+                    for div in battle.get('div', {}).values():
+                        if div['stats'] and not div['end']:
+                            for side, side_data in div['stats'].items():
+                                if side_data and side_data['citizenId'] in hunted_ids:
+                                    pid = side_data['citizenId']
+                                    medal_key = (pid, battle['id'], div['div'], battle[side]['id'], side_data['damage'])
+                                    if not DB.check_medal(*medal_key):
+                                        for member in DB.get_members_to_notify(pid):
+                                            format_data = dict(author=member, player=DB.get_player(pid)['name'],
+                                                               battle=bid,
+                                                               region=battle.get('region').get('name'),
+                                                               division=div['div'], dmg=side_data['damage'],
+                                                               side=COUNTRIES[battle[side]['id']])
 
-                                        format_data = dict(author=member, player=DB.get_player(pid)['name'], battle=bid,
-                                                           region=battle.get('region').get('name'),
-                                                           division=div['div'], dmg=side_data['damage'],
-                                                           side=COUNTRIES[battle[side]['id']])
-
-                                        await self.get_channel(603527159109124096).send(
-                                            "<@{author}> **{player}** detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
-                                            "https://www.erepublik.com/en/military/battlefield/{battle}".format(
-                                                **format_data)
-                                        )
-                                    DB.add_reported_medal(*medal_key)
-            sleep_seconds = r.get('last_updated') + 60 - self.timestamp
-            await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
+                                            await self.get_channel(603527159109124096).send(
+                                                "<@{author}> **{player}** detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
+                                                "https://www.erepublik.com/en/military/battlefield/{battle}".format(
+                                                    **format_data)
+                                            )
+                                        DB.add_reported_medal(*medal_key)
+                sleep_seconds = r.get('last_updated') + 60 - self.timestamp
+                await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
+            except Exception as e:
+                await self.get_channel(603527159109124096).send("<@220849530730577920> Something bad has happened with"
+                                                                " medal hunter!")
+                logging.error("Discord bot's eRepublik medal hunter died!", exc_info=e)
 
 
 if __name__ == "__main__":
-    client = MyClient()
+    loop = asyncio.get_event_loop()
+    client = MyClient(loop=loop)
     bot = commands.Bot(command_prefix='!')
 
 
@@ -202,7 +208,7 @@ if __name__ == "__main__":
 
     @bot.command(description="Parādīt lētos SH, kuru dmg ir zem 50k vai Tevis ievadīta vērtībā", help="Lētie SH",
                  category="Cheap medals")
-    async def sh(ctx, min_damage: int = 50000):
+    async def sh(ctx, min_damage: int = 50_000):
         await _send_medal_info(ctx, 11, min_damage)
 
 
@@ -243,11 +249,27 @@ if __name__ == "__main__":
             await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
         else:
             player_name = DB.get_player(player_id).get('name')
-            local_member_id = DB.get_member(ctx.author.id).get('id')
+            try:
+                local_member_id = DB.get_member(ctx.author.id).get('id')
+            except NotFoundError:
+                local_member_id = DB.add_member(ctx.author.id, ctx.author.name)
             if DB.add_hunted_player(player_id, local_member_id):
                 await ctx.send(f"{ctx.author.mention} You'll be notified for all **{player_name}** medals")
             else:
                 await ctx.send(f"{ctx.author.mention} You are already being notified for all **{player_name}** medals")
+
+
+    @bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
+                 help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
+    async def my_hunt(ctx):
+        msgs = []
+        for hunt in DB.get_member_hunted_players(ctx.author.id):
+            msgs.append(f"`{hunt['id']}` - **{hunt['name']}**")
+        if msgs:
+            msg = "\n".join(msgs)
+            await ctx.send(f"{ctx.author.mention} You are hunting:\n{msg}")
+        else:
+            await ctx.send(f"{ctx.author.mention} You're not hunting anyone!")
 
 
     @bot.command(description="Beigt informēt par spēlētāja mēģinājumiem ņemt medaļas",
@@ -259,12 +281,11 @@ if __name__ == "__main__":
             player_name = DB.get_player(player_id).get('name')
             local_member_id = DB.get_member(ctx.author.id).get('id')
             if DB.remove_hunted_player(player_id, local_member_id):
-                await ctx.send(f"{ctx.author.mention} You won't be notified for all **{player_name}** medals")
+                await ctx.send(f"{ctx.author.mention} You won't be notified for **{player_name}** medals")
             else:
-                await ctx.send(f"{ctx.author.mention} You weren't being notified for **{player_name}** medals")
+                await ctx.send(f"{ctx.author.mention} You were not hunting **{player_name}** medals")
 
     try:
-        loop = asyncio.get_event_loop()
         loop.create_task(bot.start(DISCORD_TOKEN))
         loop.create_task(client.start(DISCORD_TOKEN))
         loop.run_forever()

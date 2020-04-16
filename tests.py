@@ -10,20 +10,16 @@ class TestDatabase(unittest.TestCase):
         self.db = DiscordDB()
 
     def test_member(self):
-        member = {'mention_number': 1, 'name': 'username'}
-        member.update(id=self.db.add_member(**member))
-        self.assertRaises(NotFoundError, self.db.get_member)
-        self.assertRaises(NotFoundError, self.db.get_member, mention_number=100)
-        self.assertEqual(self.db.get_member(local_id=member['id']), member)
-        self.assertEqual(self.db.get_member(mention_number=member['mention_number']), member)
-        self.assertFalse(self.db.update_member(member['id']))
-        member.update(name="Success", mention_number=2)
-        self.assertTrue(self.db.update_member(member['id'], name=member['name'],
-                                              mention_number=member['mention_number']))
-        self.assertTrue(self.db.update_member(member['id'], name=member['name']))
-        self.assertTrue(self.db.update_member(member['id'], mention_number=member['mention_number']))
-        self.assertEqual(self.db.get_member(local_id=member['id']), member)
-        self.assertEqual(self.db.get_member(mention_number=member['mention_number']), member)
+        member = {'id': 1200, 'name': 'username'}
+        self.db.add_member(**member)
+        self.assertEqual(self.db.add_member(**member), member['id'])
+
+        self.assertRaises(NotFoundError, self.db.get_member, member_id=100)
+        self.assertEqual(self.db.get_member(member_id=member['id']), member)
+
+        member.update(name="Success")
+        self.assertTrue(self.db.update_member(member['id'], member['name']))
+        self.assertEqual(self.db.get_member(member_id=member['id']), member)
 
     def test_player(self):
         player = {'id': 1, 'name': 'plato'}
@@ -45,20 +41,20 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(self.db.delete_medals([kwargs['bid']]))
 
     def test_hunt(self):
-        member_id = self.db.add_member(mention_number=2, name="username")
-        member_id2 = self.db.add_member(mention_number=3, name="username")
-        member_id3 = self.db.add_member(mention_number=4, name="username")
+        member_id = self.db.add_member(2, name="one")
+        member_id2 = self.db.add_member(3, name="two")
+        member_id3 = self.db.add_member(4, name="three")
         self.db.add_player(1, 'plato')
         self.db.add_player(2, 'draco')
         self.assertFalse(self.db.check_hunt(1, member_id))
         self.assertFalse(self.db.remove_hunted_player(1, member_id))
-        self.assertTrue(self.db.add_hunted_player(1, member_id))
-        self.assertTrue(self.db.add_hunted_player(1, member_id2))
-        self.assertTrue(self.db.add_hunted_player(1, member_id3))
-        self.assertTrue(self.db.add_hunted_player(2, member_id))
+        self.assertTrue(self.db.add_hunted_player(1, member_id, 123))
+        self.assertTrue(self.db.add_hunted_player(1, member_id2, 234))
+        self.assertTrue(self.db.add_hunted_player(1, member_id3, 345))
+        self.assertTrue(self.db.add_hunted_player(2, member_id, 456))
         self.assertListEqual(self.db.get_hunted_player_ids(), [1, 2])
         self.assertListEqual(self.db.get_members_to_notify(1), [2, 3, 4])
         self.assertListEqual(self.db.get_members_to_notify(2), [2])
-        self.assertFalse(self.db.add_hunted_player(1, member_id))
+        self.assertFalse(self.db.add_hunted_player(1, member_id, 567))
         self.assertTrue(self.db.check_hunt(1, member_id))
         self.assertTrue(self.db.remove_hunted_player(1, member_id))
