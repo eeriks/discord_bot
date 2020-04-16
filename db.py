@@ -1,4 +1,5 @@
-from typing import List, Union, Dict, Optional
+from sqlite3 import IntegrityError
+from typing import List, Union, Dict, Optional, Set
 
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
@@ -14,24 +15,34 @@ class DiscordDB:
             self._db = Database(memory=True)
         else:
             self._db = Database(self._name)
+        migrate_db = False
         if "member" not in self._db.table_names():
-            self._db.create_table("member", {"id": int, "name": str, "mention_number": int},
-                                  pk="id", not_null={"id", "name", "mention_number"})
+            self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
+        else:
+            if "mention_number" in self._db.table('member').columns_dict.keys():
+                members: Set[Dict[str, Union[int, str]]] = {*[]}
+                for row in self._db.table('member').rows:
+                    members.add({'id': row['mention_number'], 'name': row['name']})
+                self._db.table('member').drop()
+                self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
+                self._db.table('member').insert_all(list(members))
+                migrate_db = True
 
         if "player" not in self._db.table_names():
             self._db.create_table("player", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
 
-        if "hunted" not in self._db.table_names():
-            self._db.create_table("hunted", {"id": int, "member_id": int, "player_id": int},
-                                  pk="id", not_null={"id", "member_id", "player_id"})
+        if "hunted" not in self._db.table_names() or migrate_db:
+            if migrate_db:
+                self._db.table('hunted').drop()
+            self._db.create_table("hunted", {"id": int, "member_id": int, "player_id": int, 'channel_id': int},
+                                  pk="id", not_null={"id", "member_id", "player_id", "channel_id"})
             self._db['hunted'].create_index(["member_id", "player_id"], unique=True)
 
         if "medals" in self._db.table_names():
-            self._db['medals'].drop()
-        self._db.create_table("medals",
-                              dict(id=int, player_id=int, battle_id=int, division_id=int, side_id=int, damage=int),
-                              not_null={"id", "player_id", "battle_id", "division_id", "side_id", "damage"},
-                              pk="id", defaults={"damage": 0})
+            self._db.table('medals').drop()
+        self._db.create_table("medals", dict(id=int, player_id=int, battle_id=int, division_id=int, side_id=int,
+                                             damage=int), pk="id", defaults={"damage": 0},
+                              not_null={"id", "player_id", "battle_id", "division_id", "side_id", "damage"})
         self._db['medals'].create_index(["player_id", "battle_id", "division_id", "side_id"], unique=True)
 
         if "hunted_players" not in self._db.view_names():
@@ -89,56 +100,45 @@ class DiscordDB:
 
     # Member methods
 
-    def get_member(self, mention_number: int = None, local_id: int = None) -> Dict[str, Union[int, str]]:
+    def get_member(self, member_id) -> Dict[str, Union[int, str]]:
         """Get discord member
 
-        :param mention_number: int Discord Member ID
-        :type mention_number: int
-        :param local_id: Query user by local id
-        :type local_id: int
+        :param member_id: int Discord Member ID
+        :type member_id: int
         :return: local id, name, mention number if discord member exists else None
         :rtype: Union[Dict[str, Union[int, str]], None]
         """
-        if local_id:
-            return self.member.get(local_id)
-        elif mention_number:
-            try:
-                return next(self.member.rows_where("mention_number = ?", [mention_number]))
-            except StopIteration:
-                raise NotFoundError("Member with given kwargs not found")
-        else:
-            raise NotFoundError("mention_number or local_id must be provided!")
+        try:
+            return self.member.get(member_id)
+        except NotFoundError:
+            raise NotFoundError("Member with given id not found")
 
-    def add_member(self, mention_number: int, name: str) -> int:
+    def add_member(self, id: int, name: str) -> int:
         """Add discord member.
 
-        :param mention_number: int Discord member ID
+        :param id: int Discord member ID
         :param name: Discord member Name
         """
-        return self.member.insert({"mention_number": mention_number, "name": name}).last_pk
+        try:
+            return self.member.insert({"id": id, "name": name}).last_pk
+        except IntegrityError:
+            return id
 
-    def update_member(self, local_id: int, name: str = "", mention_number: int = None) -> bool:
+    def update_member(self, member_id: int, name: str) -> bool:
         """Update discord member"s record
 
-        :param mention_number: Discord Mention ID
-        :type mention_number: int Discord Mention ID
+        :param member_id: Discord Mention ID
+        :type member_id: int Discord Mention ID
         :param name: Discord user name
         :type name: str Discord user name
-        :param local_id: Local id of Discord mention ID
-        :type local_id: int
         :return: bool
         """
-        member = self.get_member(local_id=local_id)
-        if member and (name or mention_number):
-            if name and not mention_number:
-                self.member.update(member["id"], {"name": name})
-            elif mention_number and not name:
-                self.member.update(member["id"], {"mention_number": mention_number})
-            else:
-                self.member.update(member["id"], {"name": name, "mention_number": mention_number})
-            return True
-        else:
-            return False
+        try:
+            member = self.get_member(member_id)
+        except NotFoundError:
+            member = self.member.get(self.add_member(member_id, name))
+        self.member.update(member["id"], {"name": name})
+        return True
 
     def check_medal(self, pid: int, bid: int, div: int, side: int, dmg: int) -> bool:
         """Check if players (pid) damage (dmg) in battle (bid) for side in division (div) has been registered
@@ -177,11 +177,11 @@ class DiscordDB:
         except StopIteration:
             return False
 
-    def add_hunted_player(self, pid: int, member_id: int) -> bool:
+    def add_hunted_player(self, pid: int, member_id: int, channel_id: int) -> bool:
         if self.check_hunt(pid, member_id):
             return False
         else:
-            self.hunted.insert({"player_id": pid, "member_id": member_id})
+            self.hunted.insert(dict(player_id=pid, member_id=member_id, channel_id=channel_id))
             return True
 
     def remove_hunted_player(self, pid: int, member_id: int) -> bool:
@@ -191,12 +191,16 @@ class DiscordDB:
         else:
             return False
 
+    def get_member_hunted_players(self, member_id: int) -> List[Dict[str, Union[int, str]]]:
+        return [self.get_player(r['player_id']) for r in self.hunted.rows_where("member_id=?",
+                                                                                (self.get_member(member_id)['id'], ))]
+
     def get_hunted_player_ids(self) -> List[int]:
         return [r["player_id"] for r in self.hunted_players.rows]
 
     def get_members_to_notify(self, pid: int) -> List[int]:
         members = []
         for row in self.hunted.rows_where("player_id = ?", [pid]):
-            member = self.get_member(local_id=row["member_id"])
-            members.append(member["mention_number"])
+            member = self.get_member(row["member_id"])
+            members.append(member["id"])
         return members
