@@ -1,6 +1,8 @@
 import asyncio
 import datetime
+import logging
 import os
+import sys
 from collections import defaultdict
 from json import JSONDecodeError
 from typing import Dict, Set
@@ -14,6 +16,20 @@ from dotenv import load_dotenv
 from db import DiscordDB
 
 load_dotenv()
+logging.basicConfig(level=logging.WARNING, filename="logging.log",
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+sys.stdout = open('output.log', 'a')
+sys.stderr = open('error.log', 'a')
+os.chdir(os.path.abspath(os.path.dirname(sys.argv[0])))
+pid = str(os.getpid())
+pidfile = "pid"
+
+if os.path.isfile(pidfile):
+    print("%s already exists, exiting" % pidfile)
+    sys.exit()
+with open(pidfile, 'w') as f:
+    f.write(str(os.getpid()))
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DB_NAME = os.getenv('DB_NAME', 'discord.db')
@@ -33,7 +49,7 @@ COUNTRIES = {1: 'Romania', 9: 'Brazil', 10: 'Italy', 11: 'France', 12: 'Germany'
              166: 'United Arab Emirates', 167: 'Albania', 168: 'Georgia', 169: 'Armenia', 170: 'Nigeria', 171: 'Cuba'}
 
 FLAGS = {1: 'flag_ro', 9: 'flag_br', 10: 'flag_it', 11: 'flag_fr', 12: 'flag_de', 13: 'flag_hu', 14: 'flag_cn',
-         15: 'flag_sp', 23: 'flag_ca', 24: 'flag_us', 26: 'flag_mx', 27: 'flag_ar', 28: 'flag_ve', 29: 'flag_gb',
+         15: 'flag_es', 23: 'flag_ca', 24: 'flag_us', 26: 'flag_mx', 27: 'flag_ar', 28: 'flag_ve', 29: 'flag_gb',
          30: 'flag_ch', 31: 'flag_nl', 32: 'flag_be', 33: 'flag_at', 34: 'flag_cz', 35: 'flag_pl', 36: 'flag_sk',
          37: 'flag_no', 38: 'flag_se', 39: 'flag_fi', 40: 'flag_ua', 41: 'flag_ru', 42: 'flag_bg', 43: 'flag_tr',
          44: 'flag_gr', 45: 'flag_jp', 47: 'flag_kr', 48: 'flag_in', 49: 'flag_id', 50: 'flag_au', 51: 'flag_za',
@@ -47,6 +63,10 @@ FLAGS = {1: 'flag_ro', 9: 'flag_br', 10: 'flag_it', 11: 'flag_fr', 12: 'flag_de'
 
 __last_battle_request = None
 __last_battle_update_timestamp = 0
+
+
+def timestamp_to_datetime(timestamp: int) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(timestamp)
 
 
 def get_battle_page():
@@ -148,10 +168,6 @@ if __name__ == "__main__":
     bot = commands.Bot(command_prefix='!')
 
 
-    def timestamp_to_datetime(timestamp: int) -> datetime.datetime:
-        return datetime.datetime.fromtimestamp(timestamp)
-
-
     @bot.event
     async def on_ready():
         print('Bot loaded')
@@ -247,8 +263,11 @@ if __name__ == "__main__":
             else:
                 await ctx.send(f"{ctx.author.mention} You weren't being notified for **{player_name}** medals")
 
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(bot.start(DISCORD_TOKEN))
+        loop.create_task(client.start(DISCORD_TOKEN))
+        loop.run_forever()
+    finally:
+        os.unlink(pidfile)
 
-    loop = asyncio.get_event_loop()
-    loop.create_task(bot.start(DISCORD_TOKEN))
-    loop.create_task(client.start(DISCORD_TOKEN))
-    loop.run_forever()

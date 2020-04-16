@@ -7,3 +7,4 @@ python discord_bot.py &
 sleep 10
 disown -h %1
 echo "Done!"
+
