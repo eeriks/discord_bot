@@ -19,16 +19,6 @@ class DiscordDB:
         migrate_db = False
         if "member" not in self._db.table_names():
             self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
-        else:
-            if "mention_number" in self._db.table('member').columns_dict.keys():
-                memb = namedtuple('Member', ['id', 'name'])
-                members: Set['memb'] = {*[]}
-                for row in self._db.table('member').rows:
-                    members.add(memb(row['mention_number'], row['name']))
-                self._db.table('member').drop()
-                self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
-                self._db.table('member').insert_all([m._asdict() for m in members])
-                migrate_db = True
 
         if "player" not in self._db.table_names():
             self._db.create_table("player", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
