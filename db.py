@@ -1,3 +1,4 @@
+from collections import namedtuple
 from sqlite3 import IntegrityError
 from typing import List, Union, Dict, Optional, Set
 
@@ -20,12 +21,13 @@ class DiscordDB:
             self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
         else:
             if "mention_number" in self._db.table('member').columns_dict.keys():
-                members: Set[Dict[str, Union[int, str]]] = {*[]}
+                memb = namedtuple('Member', ['id', 'name'])
+                members: Set['memb'] = {*[]}
                 for row in self._db.table('member').rows:
-                    members.add({'id': row['mention_number'], 'name': row['name']})
+                    members.add(memb(row['mention_number'], row['name']))
                 self._db.table('member').drop()
                 self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
-                self._db.table('member').insert_all(list(members))
+                self._db.table('member').insert_all([m._asdict() for m in members])
                 migrate_db = True
 
         if "player" not in self._db.table_names():
@@ -113,16 +115,16 @@ class DiscordDB:
         except NotFoundError:
             raise NotFoundError("Member with given id not found")
 
-    def add_member(self, id: int, name: str) -> int:
+    def add_member(self, id: int, name: str) -> Dict[str, Union[int, str]]:
         """Add discord member.
 
         :param id: int Discord member ID
         :param name: Discord member Name
         """
         try:
-            return self.member.insert({"id": id, "name": name}).last_pk
-        except IntegrityError:
-            return id
+            self.member.insert({"id": id, "name": name})
+        finally:
+            return self.member.get(id)
 
     def update_member(self, member_id: int, name: str) -> bool:
         """Update discord member"s record
@@ -136,7 +138,7 @@ class DiscordDB:
         try:
             member = self.get_member(member_id)
         except NotFoundError:
-            member = self.member.get(self.add_member(member_id, name))
+            member = self.add_member(member_id, name)
         self.member.update(member["id"], {"name": name})
         return True
 
@@ -198,9 +200,5 @@ class DiscordDB:
     def get_hunted_player_ids(self) -> List[int]:
         return [r["player_id"] for r in self.hunted_players.rows]
 
-    def get_members_to_notify(self, pid: int) -> List[int]:
-        members = []
-        for row in self.hunted.rows_where("player_id = ?", [pid]):
-            member = self.get_member(row["member_id"])
-            members.append(member["id"])
-        return members
+    def get_members_to_notify(self, pid: int) -> List[Dict[str, Union[int, str]]]:
+        return [r for r in self.hunted.rows_where("player_id = ?", [pid])]

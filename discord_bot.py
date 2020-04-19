@@ -26,9 +26,6 @@ os.chdir(os.path.abspath(os.path.dirname(sys.argv[0])))
 pid = str(os.getpid())
 pidfile = "pid"
 
-if os.path.isfile(pidfile):
-    print("%s already exists, exiting" % pidfile)
-    sys.exit()
 with open(pidfile, 'w') as f:
     f.write(str(os.getpid()))
 
@@ -89,6 +86,8 @@ def check_player(player_id: int) -> bool:
             r = requests.get(f'https://www.erepublik.com/en/main/citizen-profile-json/{player_id}').json()
         except JSONDecodeError:
             return False
+        if r.get('error') or not r.get('status'):
+            return False
         DB.add_player(player_id, r.get('citizen').get('name'))
 
     return True
@@ -147,14 +146,14 @@ class MyClient(discord.Client):
                                     pid = side_data['citizenId']
                                     medal_key = (pid, battle['id'], div['div'], battle[side]['id'], side_data['damage'])
                                     if not DB.check_medal(*medal_key):
-                                        for member in DB.get_members_to_notify(pid):
-                                            format_data = dict(author=member, player=DB.get_player(pid)['name'],
+                                        for hunt_row in DB.get_members_to_notify(pid):
+                                            format_data = dict(author=hunt_row['member_id'], player=DB.get_player(pid)['name'],
                                                                battle=bid,
                                                                region=battle.get('region').get('name'),
                                                                division=div['div'], dmg=side_data['damage'],
                                                                side=COUNTRIES[battle[side]['id']])
 
-                                            await self.get_channel(603527159109124096).send(
+                                            await self.get_channel(hunt_row['channel_id']).send(
                                                 "<@{author}> **{player}** detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
                                                 "https://www.erepublik.com/en/military/battlefield/{battle}".format(
                                                     **format_data)
@@ -252,19 +251,21 @@ if __name__ == "__main__":
             try:
                 local_member_id = DB.get_member(ctx.author.id).get('id')
             except NotFoundError:
-                local_member_id = DB.add_member(ctx.author.id, ctx.author.name)
-            if DB.add_hunted_player(player_id, local_member_id):
-                await ctx.send(f"{ctx.author.mention} You'll be notified for all **{player_name}** medals")
+                local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
+            if ctx.channel.type.value == 1:
+                await ctx.send(f"{ctx.author.mention}, sorry, but currently I'm unable to notify You in DM channel!")
+            elif DB.add_hunted_player(player_id, local_member_id, ctx.channel.id):
+                await ctx.send(f"{ctx.author.mention} You'll be notified for **{player_name}** medals in this channel")
             else:
-                await ctx.send(f"{ctx.author.mention} You are already being notified for all **{player_name}** medals")
+                await ctx.send(f"{ctx.author.mention} You are already being notified for **{player_name}** medals")
 
 
     @bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
                  help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
     async def my_hunt(ctx):
         msgs = []
-        for hunt in DB.get_member_hunted_players(ctx.author.id):
-            msgs.append(f"`{hunt['id']}` - **{hunt['name']}**")
+        for hunted_player in DB.get_member_hunted_players(ctx.author.id):
+            msgs.append(f"`{hunted_player['id']}` - **{hunted_player['name']}**")
         if msgs:
             msg = "\n".join(msgs)
             await ctx.send(f"{ctx.author.mention} You are hunting:\n{msg}")
@@ -279,16 +280,23 @@ if __name__ == "__main__":
             await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
         else:
             player_name = DB.get_player(player_id).get('name')
-            local_member_id = DB.get_member(ctx.author.id).get('id')
+            try:
+                local_member_id = DB.get_member(ctx.author.id).get('id')
+            except NotFoundError:
+                local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
             if DB.remove_hunted_player(player_id, local_member_id):
                 await ctx.send(f"{ctx.author.mention} You won't be notified for **{player_name}** medals")
             else:
                 await ctx.send(f"{ctx.author.mention} You were not hunting **{player_name}** medals")
 
-    try:
-        loop.create_task(bot.start(DISCORD_TOKEN))
-        loop.create_task(client.start(DISCORD_TOKEN))
-        loop.run_forever()
-    finally:
-        os.unlink(pidfile)
+
+    @hunt.error
+    @remove_hunt.error
+    async def hunt_error(ctx, error):
+        if isinstance(error, commands.BadArgument):
+            await ctx.send('spēlētāja identifikators jāpadod kā skaitliska vērtība, piemēram, 1620414')
+
+    loop.create_task(bot.start(DISCORD_TOKEN))
+    loop.create_task(client.start(DISCORD_TOKEN))
+    loop.run_forever()
 
