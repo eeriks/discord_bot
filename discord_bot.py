@@ -16,18 +16,21 @@ from sqlite_utils.db import NotFoundError
 
 from db import DiscordDB
 
+APP_NAME = "discord_bot"
+
+os.chdir(os.path.abspath(os.path.dirname(sys.argv[0])))
 load_dotenv()
 logging.basicConfig(level=logging.WARNING, filename="logging.log",
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(APP_NAME)
+logger.setLevel(logging.DEBUG)
+logger.propagate = False
+fh = logging.FileHandler(f"./logging2.log", "w")
+fh.setLevel(logging.DEBUG)
+logger.addHandler(fh)
+keep_fds = [fh.stream.fileno()]
 
-sys.stdout = open('output.log', 'a')
-sys.stderr = open('error.log', 'a')
-os.chdir(os.path.abspath(os.path.dirname(sys.argv[0])))
-pid = str(os.getpid())
-pidfile = "pid"
-
-with open(pidfile, 'w') as f:
-    f.write(str(os.getpid()))
+pidfile = f"/tmp/{APP_NAME}-{os.getpid()}.pid"
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DB_NAME = os.getenv('DB_NAME', 'discord.db')
@@ -59,7 +62,7 @@ FLAGS = {1: 'flag_ro', 9: 'flag_br', 10: 'flag_it', 11: 'flag_fr', 12: 'flag_de'
          168: 'flag_ge', 169: 'flag_am', 170: 'flag_ng', 171: 'flag_cu'}
 
 
-__last_battle_request = None
+__last_battle_response = None
 __last_battle_update_timestamp = 0
 
 
@@ -68,12 +71,16 @@ def timestamp_to_datetime(timestamp: int) -> datetime.datetime:
 
 
 def get_battle_page():
-    global __last_battle_update_timestamp, __last_battle_request
+    global __last_battle_update_timestamp, __last_battle_response
     if int(datetime.datetime.now().timestamp()) >= __last_battle_update_timestamp + 60:
-        r = requests.get('https://erep.lv/battles.json').json()
-        __last_battle_request = r
-        __last_battle_update_timestamp = r.get('last_updated', int(datetime.datetime.now().timestamp()))
-    return __last_battle_request
+        r = requests.get('https://erep.lv/battles.json')
+        __last_battle_response = r.json()
+        __last_battle_update_timestamp = __last_battle_response.get('last_updated', int(datetime.datetime.now().timestamp()))
+        d = timestamp_to_datetime(__last_battle_update_timestamp//3600*3600)
+        os.makedirs(f"{d:%F/%H}/", exist_ok=True)
+        with open(f"{d:%F/%H}/{__last_battle_update_timestamp}.json", 'w') as f:
+            f.write(r.text)
+    return __last_battle_response
 
 
 def check_player(player_id: int) -> bool:
@@ -164,139 +171,155 @@ class MyClient(discord.Client):
             except Exception as e:
                 await self.get_channel(603527159109124096).send("<@220849530730577920> Something bad has happened with"
                                                                 " medal hunter!")
-                logging.error("Discord bot's eRepublik medal hunter died!", exc_info=e)
+                logger.error("Discord bot's eRepublik medal hunter died!", exc_info=e)
+                try:
+                    with open(f"{self.timestamp}.json", 'w') as f:
+                        f.write(r.text)
+                except NameError:
+                    logger.error("There was no Response object!", exc_info=e)
+                await asyncio.sleep(10)
 
 
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    client = MyClient(loop=loop)
-    bot = commands.Bot(command_prefix='!')
+
+loop = asyncio.get_event_loop()
+client = MyClient(loop=loop)
+bot = commands.Bot(command_prefix='!')
 
 
-    @bot.event
-    async def on_ready():
-        print('Bot loaded')
-        # print(bot.user.name)
-        # print(bot.user.id)
-        print('------')
+
+@bot.event
+async def on_ready():
+    print('Bot loaded')
+    # print(bot.user.name)
+    # print(bot.user.id)
+    print('------')
 
 
-    @bot.command(description="Parādīt lētos d1 BH, kuru dmg ir zem 5m vai Tevis ievadīta vērtībā", help="Lētie d1 BH",
-                 category="Cheap medals")
-    async def bh1(ctx, max_damage: int = 5_000_000):
-        await _send_medal_info(ctx, 1, max_damage)
+@bot.command(description="Parādīt lētos d1 BH, kuru dmg ir zem 5m vai Tevis ievadīta vērtībā", help="Lētie d1 BH",
+             category="Cheap medals")
+async def bh1(ctx, max_damage: int = 5_000_000):
+    await _send_medal_info(ctx, 1, max_damage)
 
 
-    @bot.command(description="Parādīt lētos d2 BH, kuru dmg ir zem 10m vai Tevis ievadīta vērtībā", help="Lētie d2 BH",
-                 category="Cheap medals")
-    async def bh2(ctx, max_damage: int = 10_000_000):
-        await _send_medal_info(ctx, 2, max_damage)
+@bot.command(description="Parādīt lētos d2 BH, kuru dmg ir zem 10m vai Tevis ievadīta vērtībā", help="Lētie d2 BH",
+             category="Cheap medals")
+async def bh2(ctx, max_damage: int = 10_000_000):
+    await _send_medal_info(ctx, 2, max_damage)
 
 
-    @bot.command(description="Parādīt lētos d3 BH, kuru dmg ir zem 15m vai Tevis ievadīta vērtībā", help="Lētie d3 BH",
-                 category="Cheap medals")
-    async def bh3(ctx, max_damage: int = 15_000_000):
-        await _send_medal_info(ctx, 3, max_damage)
+@bot.command(description="Parādīt lētos d3 BH, kuru dmg ir zem 15m vai Tevis ievadīta vērtībā", help="Lētie d3 BH",
+             category="Cheap medals")
+async def bh3(ctx, max_damage: int = 15_000_000):
+    await _send_medal_info(ctx, 3, max_damage)
 
 
-    @bot.command(description="Parādīt lētos d4 BH, kuru dmg ir zem 50m vai Tevis ievadīta vērtībā", help="Lētie d4 BH",
-                 category="Cheap medals")
-    async def bh4(ctx, max_damage: int = 50_000_000):
-        await _send_medal_info(ctx, 4, max_damage)
+@bot.command(description="Parādīt lētos d4 BH, kuru dmg ir zem 50m vai Tevis ievadīta vērtībā", help="Lētie d4 BH",
+             category="Cheap medals")
+async def bh4(ctx, max_damage: int = 50_000_000):
+    await _send_medal_info(ctx, 4, max_damage)
 
 
-    @bot.command(description="Parādīt lētos SH, kuru dmg ir zem 50k vai Tevis ievadīta vērtībā", help="Lētie SH",
-                 category="Cheap medals")
-    async def sh(ctx, min_damage: int = 50_000):
-        await _send_medal_info(ctx, 11, min_damage)
+@bot.command(description="Parādīt lētos SH, kuru dmg ir zem 50k vai Tevis ievadīta vērtībā", help="Lētie SH",
+             category="Cheap medals")
+async def sh(ctx, min_damage: int = 50_000):
+    await _send_medal_info(ctx, 11, min_damage)
 
 
-    @bh1.error
-    @bh2.error
-    @bh3.error
-    @bh4.error
-    @sh.error
-    async def damage_error(ctx, error):
-        if isinstance(error, commands.BadArgument):
-            await ctx.send('Damage vērtībai ir jābūt veselam skaitlim')
+@bh1.error
+@bh2.error
+@bh3.error
+@bh4.error
+@sh.error
+async def damage_error(ctx, error):
+    if isinstance(error, commands.BadArgument):
+        await ctx.send('Damage vērtībai ir jābūt veselam skaitlim')
 
 
-    async def _send_medal_info(ctx, division: int, damage: int):
-        cheap_bhs = []  # Battle id, Side, damage, round time
-        for division_data in get_medals(division):
-            if division_data['dmg'] < damage:
-                division_data['flag'] = FLAGS[division_data['country_id']]
-                division_data['country'] = COUNTRIES[division_data['country_id']]
-                cheap_bhs.append(division_data)
+async def _send_medal_info(ctx, division: int, damage: int):
+    cheap_bhs = []  # Battle id, Side, damage, round time
+    for division_data in get_medals(division):
+        if division_data['dmg'] < damage:
+            division_data['flag'] = FLAGS[division_data['country_id']]
+            division_data['country'] = COUNTRIES[division_data['country_id']]
+            cheap_bhs.append(division_data)
 
-        if cheap_bhs:
-            cheap_bhs = sorted(cheap_bhs, key=lambda _: _['time'])
-            cheap_bhs.reverse()
-            msg = "\n".join(["{dmg:,d}dmg for :{flag}: {country}, {time} round time "
-                             "https://www.erepublik.com/en/military/battlefield/{id}".format(**bh) for bh in cheap_bhs])
-            if len(msg) > 2000:
-                msg = "\n".join(msg[:2000].split('\n')[:-1])
-            await ctx.send(msg)
+    if cheap_bhs:
+        cheap_bhs = sorted(cheap_bhs, key=lambda _: _['time'])
+        cheap_bhs.reverse()
+        msg = "\n".join(["{dmg:,d}dmg for :{flag}: {country}, {time} round time "
+                         "https://www.erepublik.com/en/military/battlefield/{id}".format(**bh) for bh in cheap_bhs])
+        if len(msg) > 2000:
+            msg = "\n".join(msg[:2000].split('\n')[:-1])
+        await ctx.send(msg)
+    else:
+        await ctx.send("No medals under {:,d} damage found!".format(damage))
+
+
+@bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
+             help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
+async def hunt(ctx, player_id: int):
+    if not check_player(player_id):
+        await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
+    else:
+        player_name = DB.get_player(player_id).get('name')
+        try:
+            local_member_id = DB.get_member(ctx.author.id).get('id')
+        except NotFoundError:
+            local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
+        if ctx.channel.type.value == 1:
+            await ctx.send(f"{ctx.author.mention}, sorry, but currently I'm unable to notify You in DM channel!")
+        elif DB.add_hunted_player(player_id, local_member_id, ctx.channel.id):
+            await ctx.send(f"{ctx.author.mention} You'll be notified for **{player_name}** medals in this channel")
         else:
-            await ctx.send("No medals under {:,d} damage found!".format(damage))
+            await ctx.send(f"{ctx.author.mention} You are already being notified for **{player_name}** medals")
 
 
-    @bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
-                 help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
-    async def hunt(ctx, player_id: int):
-        if not check_player(player_id):
-            await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
+@bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
+             help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
+async def my_hunt(ctx):
+    msgs = []
+    for hunted_player in DB.get_member_hunted_players(ctx.author.id):
+        msgs.append(f"`{hunted_player['id']}` - **{hunted_player['name']}**")
+    if msgs:
+        msg = "\n".join(msgs)
+        await ctx.send(f"{ctx.author.mention} You are hunting:\n{msg}")
+    else:
+        await ctx.send(f"{ctx.author.mention} You're not hunting anyone!")
+
+
+@bot.command(description="Beigt informēt par spēlētāja mēģinājumiem ņemt medaļas",
+             help="Atreģistrēties no spēlētāja medaļu paziņošanas", category="Hunting")
+async def remove_hunt(ctx, player_id: int):
+    if not check_player(player_id):
+        await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
+    else:
+        player_name = DB.get_player(player_id).get('name')
+        try:
+            local_member_id = DB.get_member(ctx.author.id).get('id')
+        except NotFoundError:
+            local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
+        if DB.remove_hunted_player(player_id, local_member_id):
+            await ctx.send(f"{ctx.author.mention} You won't be notified for **{player_name}** medals")
         else:
-            player_name = DB.get_player(player_id).get('name')
-            try:
-                local_member_id = DB.get_member(ctx.author.id).get('id')
-            except NotFoundError:
-                local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
-            if ctx.channel.type.value == 1:
-                await ctx.send(f"{ctx.author.mention}, sorry, but currently I'm unable to notify You in DM channel!")
-            elif DB.add_hunted_player(player_id, local_member_id, ctx.channel.id):
-                await ctx.send(f"{ctx.author.mention} You'll be notified for **{player_name}** medals in this channel")
-            else:
-                await ctx.send(f"{ctx.author.mention} You are already being notified for **{player_name}** medals")
+            await ctx.send(f"{ctx.author.mention} You were not hunting **{player_name}** medals")
 
 
-    @bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
-                 help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
-    async def my_hunt(ctx):
-        msgs = []
-        for hunted_player in DB.get_member_hunted_players(ctx.author.id):
-            msgs.append(f"`{hunted_player['id']}` - **{hunted_player['name']}**")
-        if msgs:
-            msg = "\n".join(msgs)
-            await ctx.send(f"{ctx.author.mention} You are hunting:\n{msg}")
-        else:
-            await ctx.send(f"{ctx.author.mention} You're not hunting anyone!")
+@hunt.error
+@remove_hunt.error
+async def hunt_error(ctx, error):
+    if isinstance(error, commands.BadArgument):
+        await ctx.send('spēlētāja identifikators jāpadod kā skaitliska vērtība, piemēram, 1620414')
 
 
-    @bot.command(description="Beigt informēt par spēlētāja mēģinājumiem ņemt medaļas",
-                 help="Atreģistrēties no spēlētāja medaļu paziņošanas", category="Hunting")
-    async def remove_hunt(ctx, player_id: int):
-        if not check_player(player_id):
-            await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
-        else:
-            player_name = DB.get_player(player_id).get('name')
-            try:
-                local_member_id = DB.get_member(ctx.author.id).get('id')
-            except NotFoundError:
-                local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
-            if DB.remove_hunted_player(player_id, local_member_id):
-                await ctx.send(f"{ctx.author.mention} You won't be notified for **{player_name}** medals")
-            else:
-                await ctx.send(f"{ctx.author.mention} You were not hunting **{player_name}** medals")
-
-
-    @hunt.error
-    @remove_hunt.error
-    async def hunt_error(ctx, error):
-        if isinstance(error, commands.BadArgument):
-            await ctx.send('spēlētāja identifikators jāpadod kā skaitliska vērtība, piemēram, 1620414')
-
+def main():
+    global loop
     loop.create_task(bot.start(DISCORD_TOKEN))
     loop.create_task(client.start(DISCORD_TOKEN))
     loop.run_forever()
+
+
+if __name__ == "__main__":
+    main()
+    # daemon = daemonize.Daemonize(APP_NAME, pidfile, main)
+    # daemon.start()
 
