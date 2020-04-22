@@ -28,7 +28,7 @@ fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
 keep_fds = [fh.stream.fileno()]
 
-pidfile = f"/tmp/{APP_NAME}-{os.getpid()}.pid"
+pidfile = f"pid"
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DB_NAME = os.getenv('DB_NAME', 'discord.db')
@@ -196,49 +196,6 @@ class MyClient(discord.Client):
                 except NameError:
                     logger.error("There was no Response object!", exc_info=e)
                 await asyncio.sleep(10)
-    #
-    # async def report_protected_medals(self):
-    #     await self.wait_until_ready()
-    #     while not self.is_closed():
-    #         try:
-    #             r = get_battle_page()
-    #             protected_ids = DB.get_protected_player_ids()
-    #             for bid, battle in r.get('battles', {}).items():
-    #                 for div in battle.get('div', {}).values():
-    #                     if div['stats'] and not div['end']:
-    #                         for side, side_data in div['stats'].items():
-    #                             if side_data and side_data['citizenId'] in protected_ids:
-    #                                 pid = side_data['citizenId']
-    #                                 medal_key = (pid, div['id'], battle[side]['id'])
-    #                                 if not DB.check_protected_medal(*medal_key):
-    #                                     for protected in DB.get_protected_members_to_notify(pid):
-    #                                         format_data = dict(author=protected['member_id'],
-    #                                                            player=DB.get_player(pid)['name'],
-    #                                                            battle=bid,
-    #                                                            region=battle.get('region').get('name'),
-    #                                                            division=div['div'],
-    #                                                            side=COUNTRIES[battle[side]['id']])
-    #
-    #                                         await self.get_channel(protected['channel_id']).send(
-    #                                             "<@{author}> Medal for **{player}** in battle for {region} on {side} "
-    #                                             "side in d{division} has been taken!\n"
-    #                                             "https://www.erepublik.com/en/military/battlefield/{battle}".format(
-    #                                                 **format_data)
-    #                                         )
-    #                                     DB.add_protected_medal(*medal_key)
-    #                                     logger.info(f"Added medal for protection {medal_key}")
-    #             sleep_seconds = r.get('last_updated') + 60 - self.timestamp
-    #             await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
-    #         except Exception as e:
-    #             await self.get_channel(603527159109124096).send(
-    #                 "<@220849530730577920> Something bad has happened with medal protector!")
-    #             logger.error("Discord bot's eRepublik medal protector error!", exc_info=e)
-    #             try:
-    #                 with open(f"{self.timestamp}.json", 'w') as f:
-    #                     f.write(r.text)
-    #             except NameError:
-    #                 logger.error("There was no Response object!", exc_info=e)
-    #             await asyncio.sleep(10)
 
 
 loop = asyncio.get_event_loop()
