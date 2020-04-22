@@ -3,9 +3,7 @@ import datetime
 import logging
 import os
 import sys
-from collections import defaultdict
 from json import JSONDecodeError
-from typing import Dict, Set
 
 import discord
 import pytz
@@ -93,7 +91,7 @@ def check_player(player_id: int) -> bool:
             r = requests.get(f'https://www.erepublik.com/en/main/citizen-profile-json/{player_id}').json()
         except JSONDecodeError:
             return False
-        if r.get('error') or not r.get('status'):
+        if r.get('error'):
             return False
         DB.add_player(player_id, r.get('citizen').get('name'))
 
@@ -106,7 +104,7 @@ def get_medals(division: int):
         request_time = timestamp_to_datetime(r.get('last_updated'))
         for battle_id, battle in r.get('battles').items():
             start_time = timestamp_to_datetime(battle.get('start'))
-            if start_time < request_time:
+            if start_time - datetime.timedelta(seconds=30) < request_time:
                 for division_data in battle.get('div', {}).values():
                     if not division_data.get('end') and division_data.get('div') == division:
                         for side, stat in division_data['stats'].items():
@@ -121,13 +119,11 @@ def get_medals(division: int):
 
 class MyClient(discord.Client):
     erep_tz = pytz.timezone('US/Pacific')
-    hunted: Dict[int, Set[discord.Member]] = defaultdict(set)
-    player_mapping: Dict[int, str] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # create the background task and run it in the background
-        self.bg_task = self.loop.create_task(self.report_hunted_medals())
+        self.bg_task = self.loop.create_task(self.report_medals())
 
     @property
     def timestamp(self):
@@ -135,56 +131,119 @@ class MyClient(discord.Client):
 
     async def on_ready(self):
         print('Client loaded')
-        # print(self.user.name)
-        # print(self.user.id)
         print('------')
 
-    async def report_hunted_medals(self):
+    async def report_medals(self):
         await self.wait_until_ready()
         while not self.is_closed():
             try:
                 r = get_battle_page()
                 hunted_ids = DB.get_hunted_player_ids()
+                protected_ids = DB.get_protected_player_ids()
                 for bid, battle in r.get('battles', {}).items():
                     for div in battle.get('div', {}).values():
                         if div['stats'] and not div['end']:
                             for side, side_data in div['stats'].items():
-                                if side_data and side_data['citizenId'] in hunted_ids:
+                                if side_data:
                                     pid = side_data['citizenId']
-                                    medal_key = (pid, battle['id'], div['div'], battle[side]['id'], side_data['damage'])
-                                    if not DB.check_medal(*medal_key):
-                                        for hunt_row in DB.get_members_to_notify(pid):
-                                            format_data = dict(author=hunt_row['member_id'], player=DB.get_player(pid)['name'],
-                                                               battle=bid,
-                                                               region=battle.get('region').get('name'),
-                                                               division=div['div'], dmg=side_data['damage'],
-                                                               side=COUNTRIES[battle[side]['id']])
+                                    if pid in hunted_ids:
+                                        hunted_medal_key = (pid, battle['id'], div['id'],
+                                                            battle[side]['id'], side_data['damage'])
+                                        if not DB.check_medal(*hunted_medal_key):
+                                            for hunt_row in DB.get_members_to_notify(pid):
+                                                format_data = dict(author=hunt_row['member_id'],
+                                                                   player=DB.get_player(pid)['name'],
+                                                                   battle=bid,
+                                                                   region=battle.get('region').get('name'),
+                                                                   division=div['div'], dmg=side_data['damage'],
+                                                                   side=COUNTRIES[battle[side]['id']])
 
-                                            await self.get_channel(hunt_row['channel_id']).send(
-                                                "<@{author}> **{player}** detected in battle for {region} on {side} side in d{division} with {dmg:,d}dmg\n"
+                                                await self.get_channel(hunt_row['channel_id']).send(
+                                                    "<@{author}> **{player}** detected in battle for {region} on {side} "
+                                                    "side in d{division} with {dmg:,d}dmg\n"
+                                                    "https://www.erepublik.com/en/military/battlefield/{battle}".format(
+                                                        **format_data))
+                                            DB.add_reported_medal(*hunted_medal_key)
+
+                                    protected_medal_key = (pid, div['id'], battle[side]['id'])
+                                    protected_medal_status = DB.check_protected_medal(*protected_medal_key)
+                                    if protected_medal_status == False:
+                                        medal = DB.get_protected_medal(div['id'], battle[side]['id'])
+                                        for protected in DB.get_protected_members_to_notify(medal['player_id']):
+                                            await self.get_channel(protected['channel_id']).send(
+                                                "<@{author}> Medal for **{player}** in battle for {region} on"
+                                                " {side} side in d{division} has been taken!\n"
                                                 "https://www.erepublik.com/en/military/battlefield/{battle}".format(
-                                                    **format_data)
-                                            )
-                                        DB.add_reported_medal(*medal_key)
+                                                    author=protected['member_id'],
+                                                    player=DB.get_player(medal['player_id'])['name'],
+                                                    battle=bid, region=battle.get('region').get('name'),
+                                                    division=div['div'], side=COUNTRIES[battle[side]['id']]
+                                                ))
+                                        DB.delete_protected_medals([medal['division_id']])
+                                    else:
+                                        if protected_medal_status is None and pid in protected_ids:
+                                            DB.add_protected_medal(*protected_medal_key)
+                                            logger.info(f"Added medal for protection {protected_medal_key}")
                 sleep_seconds = r.get('last_updated') + 60 - self.timestamp
                 await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
             except Exception as e:
                 await self.get_channel(603527159109124096).send("<@220849530730577920> Something bad has happened with"
                                                                 " medal hunter!")
-                logger.error("Discord bot's eRepublik medal hunter died!", exc_info=e)
+                logger.error("Discord bot's eRepublik medal watcher died!", exc_info=e)
                 try:
                     with open(f"{self.timestamp}.json", 'w') as f:
                         f.write(r.text)
                 except NameError:
                     logger.error("There was no Response object!", exc_info=e)
                 await asyncio.sleep(10)
-
+    #
+    # async def report_protected_medals(self):
+    #     await self.wait_until_ready()
+    #     while not self.is_closed():
+    #         try:
+    #             r = get_battle_page()
+    #             protected_ids = DB.get_protected_player_ids()
+    #             for bid, battle in r.get('battles', {}).items():
+    #                 for div in battle.get('div', {}).values():
+    #                     if div['stats'] and not div['end']:
+    #                         for side, side_data in div['stats'].items():
+    #                             if side_data and side_data['citizenId'] in protected_ids:
+    #                                 pid = side_data['citizenId']
+    #                                 medal_key = (pid, div['id'], battle[side]['id'])
+    #                                 if not DB.check_protected_medal(*medal_key):
+    #                                     for protected in DB.get_protected_members_to_notify(pid):
+    #                                         format_data = dict(author=protected['member_id'],
+    #                                                            player=DB.get_player(pid)['name'],
+    #                                                            battle=bid,
+    #                                                            region=battle.get('region').get('name'),
+    #                                                            division=div['div'],
+    #                                                            side=COUNTRIES[battle[side]['id']])
+    #
+    #                                         await self.get_channel(protected['channel_id']).send(
+    #                                             "<@{author}> Medal for **{player}** in battle for {region} on {side} "
+    #                                             "side in d{division} has been taken!\n"
+    #                                             "https://www.erepublik.com/en/military/battlefield/{battle}".format(
+    #                                                 **format_data)
+    #                                         )
+    #                                     DB.add_protected_medal(*medal_key)
+    #                                     logger.info(f"Added medal for protection {medal_key}")
+    #             sleep_seconds = r.get('last_updated') + 60 - self.timestamp
+    #             await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
+    #         except Exception as e:
+    #             await self.get_channel(603527159109124096).send(
+    #                 "<@220849530730577920> Something bad has happened with medal protector!")
+    #             logger.error("Discord bot's eRepublik medal protector error!", exc_info=e)
+    #             try:
+    #                 with open(f"{self.timestamp}.json", 'w') as f:
+    #                     f.write(r.text)
+    #             except NameError:
+    #                 logger.error("There was no Response object!", exc_info=e)
+    #             await asyncio.sleep(10)
 
 
 loop = asyncio.get_event_loop()
 client = MyClient(loop=loop)
 bot = commands.Bot(command_prefix='!')
-
 
 
 @bot.event
@@ -274,8 +333,8 @@ async def hunt(ctx, player_id: int):
             await ctx.send(f"{ctx.author.mention} You are already being notified for **{player_name}** medals")
 
 
-@bot.command(description="Informēt par spēlētāja mēģinājumiem ņemt medaļas",
-             help="Piereģistrēties uz spēlētāja medaļu paziņošanu", category="Hunting")
+@bot.command(description="Show list of hunted players",
+             help="Parādīt visus spēlētajus, kurus es medīju", category="Hunting")
 async def my_hunt(ctx):
     msgs = []
     for hunted_player in DB.get_member_hunted_players(ctx.author.id):
@@ -302,6 +361,56 @@ async def remove_hunt(ctx, player_id: int):
             await ctx.send(f"{ctx.author.mention} You won't be notified for **{player_name}** medals")
         else:
             await ctx.send(f"{ctx.author.mention} You were not hunting **{player_name}** medals")
+
+
+@bot.command(description="Informēt par mēģinājiem nozagt medaļu",
+             help="Piereģistrēties uz medaļu sargāšanas paziņošanu", category="Protection")
+async def protect(ctx, player_id: int):
+    if not check_player(player_id):
+        await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
+    else:
+        player_name = DB.get_player(player_id).get('name')
+        try:
+            local_member_id = DB.get_member(ctx.author.id).get('id')
+        except NotFoundError:
+            local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
+        if ctx.channel.type.value == 1:
+            await ctx.send(f"{ctx.author.mention}, sorry, but currently I'm unable to notify You in DM channel!")
+        elif DB.add_protected_player(player_id, local_member_id, ctx.channel.id):
+            await ctx.send(f"{ctx.author.mention} You'll be notified in this channel when anyone passes "
+                           f"**{player_name}**'s medals")
+        else:
+            await ctx.send(f"{ctx.author.mention} You are already being notified for **{player_name}** medals")
+
+
+@bot.command(description="Show players whose medals I'm protecting",
+             help="Parādīt sargājamo spēlētāju sarakstu ", category="Protection")
+async def my_protected(ctx):
+    msgs = []
+    for protected_player in DB.get_member_protected_players(ctx.author.id):
+        msgs.append(f"`{protected_player['id']}` - **{protected_player['name']}**")
+    if msgs:
+        msg = "\n".join(msgs)
+        await ctx.send(f"{ctx.author.mention} You are protecting:\n{msg}")
+    else:
+        await ctx.send(f"{ctx.author.mention} You're not protecting anyone!")
+
+
+@bot.command(description="Beigt informēt par spēlētāju mēģinājumiem noņemt medaļas",
+             help="Atreģistrēties no spēlētāja medaļu sargāšanas paziņošanas", category="Protection")
+async def remove_protection(ctx, player_id: int):
+    if not check_player(player_id):
+        await ctx.send(f"{ctx.author.mention} didn't find any player with `id: {player_id}`!")
+    else:
+        player_name = DB.get_player(player_id).get('name')
+        try:
+            local_member_id = DB.get_member(ctx.author.id).get('id')
+        except NotFoundError:
+            local_member_id = DB.add_member(ctx.author.id, ctx.author.name).get('id')
+        if DB.remove_protected_player(player_id, local_member_id):
+            await ctx.send(f"{ctx.author.mention} You won't be notified for **{player_name}** medals")
+        else:
+            await ctx.send(f"{ctx.author.mention} You were not protecting **{player_name}** medals")
 
 
 @hunt.error

@@ -66,3 +66,34 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(self.db.check_hunt(1, member_1['id']))
         self.assertTrue(self.db.remove_hunted_player(1, member_1['id']))
         self.assertFalse(self.db.check_hunt(1, member_1['id']))
+
+    '''' MEDAL PROTECTION '''
+    def test_protected_medal(self):
+        medal_data = {"pid": 4229720, "div": 7799071, "side": 71}
+        self.assertFalse(self.db.check_protected_medal(**medal_data))
+        self.assertIsNone(self.db.add_protected_medal(**medal_data))
+        self.assertTrue(self.db.check_protected_medal(**medal_data))
+        self.assertFalse(self.db.check_protected_medal(2, medal_data['div'], medal_data['side']))
+        self.assertTrue(self.db.delete_protected_medals([medal_data['div']]))
+
+    def test_protection(self):
+        member = self.db.add_member(2, name="one")
+        self.db.add_player(2, 'plato')
+        self.db.add_player(1620414, 'inpoc1')
+
+        self.assertFalse(self.db.check_protected(2, member['id']))
+        self.assertFalse(self.db.remove_protected_player(2, member['id']))
+        protected_player_1 = {'id': 1, "member_id": member['id'], 'player_id': 1620414, 'channel_id': 123}
+        self.assertTrue(self.db.add_protected_player(
+            protected_player_1['player_id'], protected_player_1['member_id'], protected_player_1['channel_id']
+        ))
+        protected_player_2 = {'id': 2, "member_id": member['id'], 'player_id': 2, 'channel_id': 123}
+        self.assertTrue(self.db.add_protected_player(
+            protected_player_2['player_id'], protected_player_2['member_id'], protected_player_2['channel_id']
+        ))
+
+        protected_player_ids = [2, 1620414]
+        self.assertListEqual(self.db.get_protected_player_ids(), protected_player_ids)
+        self.assertListEqual(self.db.get_protected_members_to_notify(1620414), [protected_player_1])
+        self.assertListEqual(self.db.get_protected_members_to_notify(2), [protected_player_2])
+
