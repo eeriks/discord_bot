@@ -74,13 +74,18 @@ def timestamp_to_datetime(timestamp: int) -> datetime.datetime:
 def get_battle_page():
     global __last_battle_update_timestamp, __last_battle_response
     if int(datetime.datetime.now().timestamp()) >= __last_battle_update_timestamp + 60:
+        dt = datetime.datetime.now()
         r = requests.get('https://erep.lv/battles.json')
-        __last_battle_response = r.json()
-        __last_battle_update_timestamp = __last_battle_response.get('last_updated', int(datetime.datetime.now().timestamp()))
-        d = timestamp_to_datetime(__last_battle_update_timestamp//3600*3600)
-        os.makedirs(f"{d:%F/%H}/", exist_ok=True)
-        with open(f"{d:%F/%H}/{__last_battle_update_timestamp}.json", 'w') as f:
+        os.makedirs(f"{dt:%F/%H}/", exist_ok=True)
+        with open(f"{dt:%F/%H}/{int(dt.timestamp())}.json", 'w') as f:
             f.write(r.text)
+        try:
+            __last_battle_response = r.json()
+        except JSONDecodeError:
+            logger.warning(f"Received non json response from erep.lv/battles.json! "
+                           f"Located at '{dt:%F/%H}/{int(dt.timestamp())}.json'")
+            return get_battle_page()
+        __last_battle_update_timestamp = __last_battle_response.get('last_updated', int(dt.timestamp()))
     return __last_battle_response
 
 
