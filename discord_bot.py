@@ -23,12 +23,15 @@ logging.basicConfig(level=logging.WARNING, filename="logging.log",
 logger = logging.getLogger(APP_NAME)
 logger.setLevel(logging.DEBUG)
 logger.propagate = False
-fh = logging.FileHandler(f"./logging2.log", "w")
+fh = logging.FileHandler(f"./logging.log", "w")
 fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
 keep_fds = [fh.stream.fileno()]
 
 pidfile = f"pid"
+with open(pidfile, 'w') as f:
+    f.write(str(os.getpid()))
+
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DB_NAME = os.getenv('DB_NAME', 'discord.db')
@@ -130,8 +133,12 @@ class MyClient(discord.Client):
         return int(datetime.datetime.now().timestamp())
 
     async def on_ready(self):
-        print('Client loaded')
+        print('Client running')
         print('------')
+
+    async def on_error(self, event_method, *args, **kwargs):
+        logger.warning('Ignoring exception in {}'.format(event_method))
+        
 
     async def report_medals(self):
         await self.wait_until_ready()
@@ -140,6 +147,10 @@ class MyClient(discord.Client):
                 r = get_battle_page()
                 hunted_ids = DB.get_hunted_player_ids()
                 protected_ids = DB.get_protected_player_ids()
+                if not isinstance(r.get('battles'), dict):
+                    sleep_seconds = r.get('last_updated') + 60 - self.timestamp
+                    await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
+                    continue
                 for bid, battle in r.get('battles', {}).items():
                     for div in battle.get('div', {}).values():
                         if div['stats'] and not div['end']:
@@ -196,10 +207,11 @@ class MyClient(discord.Client):
                 except NameError:
                     logger.error("There was no Response object!", exc_info=e)
                 await asyncio.sleep(10)
+        await self.get_channel(603527159109124096).send("<@220849530730577920> I've stopped, please restart")
 
 
 loop = asyncio.get_event_loop()
-client = MyClient(loop=loop)
+client = MyClient()
 bot = commands.Bot(command_prefix='!')
 
 
@@ -372,6 +384,8 @@ async def remove_protection(ctx, player_id: int):
 
 @hunt.error
 @remove_hunt.error
+@protect.error
+@remove_protection.error
 async def hunt_error(ctx, error):
     if isinstance(error, commands.BadArgument):
         await ctx.send('spēlētāja identifikators jāpadod kā skaitliska vērtība, piemēram, 1620414')
