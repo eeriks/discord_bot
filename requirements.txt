@@ -1,6 +1,4 @@
-discord.py
-requests
-pytz
-python-dotenv
-sqlite_utils
-daemonize
+discord.py==1.7.3
+requests==2.26.0
+python-dotenv==0.18.0
+sqlite_utils==3.12
