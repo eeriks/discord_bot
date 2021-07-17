@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import logging
 import os
 import sys
@@ -27,6 +28,8 @@ fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
 keep_fds = [fh.stream.fileno()]
 
+os.makedirs('debug', exist_ok=True)
+
 pidfile = "pid"
 with open(pidfile, 'w') as f:
     f.write(str(os.getpid()))
@@ -49,7 +52,7 @@ FLAGS = {1: 'flag_ro', 9: 'flag_br', 10: 'flag_it', 11: 'flag_fr', 12: 'flag_de'
          82: 'flag_cy', 83: 'flag_by', 84: 'flag_nz', 164: 'flag_sa', 165: 'flag_eg', 166: 'flag_ae', 167: 'flag_al',
          168: 'flag_ge', 169: 'flag_am', 170: 'flag_ng', 171: 'flag_cu'}
 
-MENTION_MAPPING = {1: "@D1", 2: "@D2", 3: "@D3", 4: "@D4", 11: "@AIR"}
+MENTION_MAPPING = {1: "D1", 2: "D2", 3: "D3", 4: "D4", 11: "Air"}
 
 __last_battle_response = None
 __last_battle_update_timestamp = 0
@@ -100,6 +103,8 @@ class MyClient(discord.Client):
 
     async def report_epics(self):
         await self.wait_until_ready()
+        roles = [role for role in self.get_guild(300297668553605131).roles if role.name in MENTION_MAPPING.values()]
+        role_mapping = {role.name: role.mention for role in roles}
         while not self.is_closed():
             try:
                 r = get_battle_page()
@@ -109,11 +114,13 @@ class MyClient(discord.Client):
                     continue
                 for bid, battle in r.get('battles', {}).items():
                     for div in battle.get('div', {}).values():
-                        if div.get('epic') and not DB.get_epic(div.get('div')):
+                        if div.get('epic') and not DB.get_epic(div.get('id')):
+                            with open(f'debug/{self.timestamp}.json', 'wb') as f:
+                                json.dump(r, f)
                             await self.get_channel(DEFAULT_CHANNEL_ID).send(
-                                f"<@{MENTION_MAPPING[div['div']]}> Epic battle! Round time {s_to_human(self.timestamp - battle['start'])}\n"
+                                f"{role_mapping[MENTION_MAPPING[div['div']]]} Epic battle! Round time {s_to_human(self.timestamp - battle['start'])}\n"
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}")
-                            DB.add_epic(div.get('div'))
+                            DB.add_epic(div.get('id'))
 
                 sleep_seconds = r.get('last_updated') + 60 - self.timestamp
                 await asyncio.sleep(sleep_seconds if sleep_seconds > 0 else 0)
