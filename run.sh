@@ -1,5 +1,4 @@
 #!/bin/bash
-python -m venv venv
 source venv/bin/activate
 echo "Checking queries..."
 python -m unittest

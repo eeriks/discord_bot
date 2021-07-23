@@ -1,4 +1,4 @@
-from typing import Union, Dict, Optional
+from typing import Dict, Optional, Union
 
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
@@ -21,7 +21,7 @@ class DiscordDB:
             self._db.create_table("player", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
 
         if "epic" not in self._db.table_names():
-            self._db.create_table("epic", {"id": int, }, pk="id", not_null={"id"})
+            self._db.create_table("epic", {"id": int, "fake": bool}, pk="id", not_null={"id"}, defaults={"fake": False})
 
         self._db.vacuum()
 

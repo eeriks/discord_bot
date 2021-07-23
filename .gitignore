@@ -1,5 +1,9 @@
 venv
 *.db
+*.log
 .env
+pid
+*pid
 __pycache__
 .idea
+debug/
