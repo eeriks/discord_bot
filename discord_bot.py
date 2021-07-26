@@ -181,8 +181,11 @@ class MyClient(discord.Client):
                         if div.get("epic") > 1 and not DB.get_epic(div.get("id")):
                             with open(f"debug/{self.timestamp}.json", "w") as f:
                                 json.dump(r, f)
+                            invader_id = battle["inv"]["id"]
+                            defender_id = battle["def"]["id"]
                             await self.get_channel(DEFAULT_CHANNEL_ID).send(
-                                f"{role_mapping[MENTION_MAPPING[div['div']]]} Epic battle! Round time {s_to_human(self.timestamp - battle['start'])}\n"
+                                f"{role_mapping[MENTION_MAPPING[div['div']]]} Epic battle {FLAGS[invader_id]} vs {FLAGS[defender_id]}! "
+                                f"Round time {s_to_human(self.timestamp - battle['start'])}\n"
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
                             )
                             DB.add_epic(div.get("id"))
