@@ -184,7 +184,7 @@ class MyClient(discord.Client):
                             invader_id = battle["inv"]["id"]
                             defender_id = battle["def"]["id"]
                             await self.get_channel(DEFAULT_CHANNEL_ID).send(
-                                f"{role_mapping[MENTION_MAPPING[div['div']]]} Epic battle {FLAGS[invader_id]} vs {FLAGS[defender_id]}! "
+                                f"{role_mapping[MENTION_MAPPING[div['div']]]} Epic battle :{FLAGS[invader_id]}: vs :{FLAGS[defender_id]}:! "
                                 f"Round time {s_to_human(self.timestamp - battle['start'])}\n"
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
                             )
