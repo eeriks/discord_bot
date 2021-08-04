@@ -4,197 +4,53 @@ import json
 import logging
 import os
 import sys
+import time
 from json import JSONDecodeError
 from typing import Union
-import time
 
-import pytz
 import discord
-import requests
-from discord.ext import commands
-from dotenv import load_dotenv
 import feedparser
-
+import pytz
+import requests
+from constants import UTF_FLAG, events
 from db import DiscordDB
-from map_events import events
+from discord.ext import commands
+from erepublik.constants import COUNTRIES
 
 APP_NAME = "discord_bot"
 
 os.chdir(os.path.abspath(os.path.dirname(sys.argv[0])))
-load_dotenv()
+os.makedirs("debug", exist_ok=True)
 
 logger = logging.getLogger(APP_NAME)
+logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-file_logger = logging.FileHandler(f"./logging.log", "w")
-file_logger.setLevel(logging.DEBUG)
+file_logger = logging.FileHandler("debug/logging.log", "w")
+file_logger.setLevel(logging.WARNING)
 file_logger.setFormatter(formatter)
 logger.addHandler(file_logger)
 
 stream_logger = logging.StreamHandler()
+stream_logger.setLevel(logging.DEBUG)
 stream_logger.setFormatter(formatter)
 logger.addHandler(stream_logger)
 
-os.makedirs("debug", exist_ok=True)
-
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEFAULT_CHANNEL_ID = os.getenv("DEFAULT_CHANNEL_ID", 603527159109124096)
-ADMIN_ID = os.getenv("DEFAULT_CHANNEL_ID", 220849530730577920)
+ADMIN_ID = os.getenv("ADMIN_ID", 220849530730577920)
 DB_NAME = os.getenv("DB_NAME", "discord.db")
+PRODUCTION = bool(os.getenv("PRODUCTION"))
 DB = DiscordDB(DB_NAME)
 
-UTF_FLAG = {
-    1: "🇷🇴",
-    9: "🇧🇷",
-    10: "🇮🇹",
-    11: "🇫🇷",
-    12: "🇩🇪",
-    13: "🇭🇺",
-    14: "🇨🇳",
-    15: "🇪🇸",
-    23: "🇨🇦",
-    24: "🇺🇸",
-    26: "🇲🇽",
-    27: "🇦🇷",
-    28: "🇻🇪",
-    29: "🇬🇧",
-    30: "🇨🇭",
-    31: "🇳🇱",
-    32: "🇧🇪",
-    33: "🇦🇹",
-    34: "🇨🇿",
-    35: "🇵🇱",
-    36: "🇸🇰",
-    37: "🇳🇴",
-    38: "🇸🇪",
-    39: "🇫🇮",
-    40: "🇺🇦",
-    41: "🇷🇺",
-    42: "🇧🇬",
-    43: "🇹🇷",
-    44: "🇬🇷",
-    45: "🇯🇵",
-    47: "🇰🇷",
-    48: "🇮🇳",
-    49: "🇮🇩",
-    50: "🇦🇺",
-    51: "🇿🇦",
-    52: "🇲🇩",
-    53: "🇵🇹",
-    54: "🇮🇪",
-    55: "🇩🇰",
-    56: "🇮🇷",
-    57: "🇵🇰",
-    58: "🇮🇱",
-    59: "🇹🇭",
-    61: "🇸🇮",
-    63: "🇭🇷",
-    64: "🇨🇱",
-    65: "🇷🇸",
-    66: "🇲🇾",
-    67: "🇵🇭",
-    68: "🇸🇬",
-    69: "🇧🇦",
-    70: "🇪🇪",
-    71: "🇱🇻",
-    72: "🇱🇹",
-    73: "🇰🇵",
-    74: "🇺🇾",
-    75: "🇵🇾",
-    76: "🇧🇴",
-    77: "🇵🇪",
-    78: "🇨🇴",
-    79: "🇲🇰",
-    80: "🇲🇪",
-    81: "🇹🇼",
-    82: "🇨🇾",
-    83: "🇧🇾",
-    84: "🇳🇿",
-    164: "🇸🇦",
-    165: "🇪🇬",
-    166: "🇦🇪",
-    167: "🇦🇱",
-    168: "🇬🇪",
-    169: "🇦🇲",
-    170: "🇳🇬",
-    171: "🇨🇺",
-}
-FLAGS = {
-    1: "flag_ro",
-    9: "flag_br",
-    10: "flag_it",
-    11: "flag_fr",
-    12: "flag_de",
-    13: "flag_hu",
-    14: "flag_cn",
-    15: "flag_es",
-    23: "flag_ca",
-    24: "flag_us",
-    26: "flag_mx",
-    27: "flag_ar",
-    28: "flag_ve",
-    29: "flag_gb",
-    30: "flag_ch",
-    31: "flag_nl",
-    32: "flag_be",
-    33: "flag_at",
-    34: "flag_cz",
-    35: "flag_pl",
-    36: "flag_sk",
-    37: "flag_no",
-    38: "flag_se",
-    39: "flag_fi",
-    40: "flag_ua",
-    41: "flag_ru",
-    42: "flag_bg",
-    43: "flag_tr",
-    44: "flag_gr",
-    45: "flag_jp",
-    47: "flag_kr",
-    48: "flag_in",
-    49: "flag_id",
-    50: "flag_au",
-    51: "flag_za",
-    52: "flag_md",
-    53: "flag_pt",
-    54: "flag_ie",
-    55: "flag_de",
-    56: "flag_ir",
-    57: "flag_pk",
-    58: "flag_il",
-    59: "flag_th",
-    61: "flag_si",
-    63: "flag_hr",
-    64: "flag_cl",
-    65: "flag_rs",
-    66: "flag_my",
-    67: "flag_ph",
-    68: "flag_sg",
-    69: "flag_ba",
-    70: "flag_ee",
-    71: "flag_lv",
-    72: "flag_lt",
-    73: "flag_kp",
-    74: "flag_uy",
-    75: "flag_py",
-    76: "flag_bo",
-    77: "flag_pe",
-    78: "flag_co",
-    79: "flag_mk",
-    80: "flag_me",
-    81: "flag_tw",
-    82: "flag_cy",
-    83: "flag_by",
-    84: "flag_nz",
-    164: "flag_sa",
-    165: "flag_eg",
-    166: "flag_ae",
-    167: "flag_al",
-    168: "flag_ge",
-    169: "flag_am",
-    170: "flag_ng",
-    171: "flag_cu",
-}
+if PRODUCTION:
+    logger.setLevel(logging.INFO)
+    _ts = int(time.time())
+    for c_id in COUNTRIES.keys():
+        DB.set_rss_feed_timestamp(c_id, _ts)
+    del _ts
+
+logger.debug(f"Active configs:\nDISCORD_TOKEN='{DISCORD_TOKEN}'\nDEFAULT_CHANNEL_ID='{DEFAULT_CHANNEL_ID}'\nADMIN_ID='{ADMIN_ID}'\nDB_NAME='{DB_NAME}'")
 
 MENTION_MAPPING = {1: "D1", 2: "D2", 3: "D3", 4: "D4", 11: "Air"}
 
@@ -232,7 +88,7 @@ class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # create the background task and run it in the background
-        self.last_event_timestamp = self.timestamp - 43200
+        self.last_event_timestamp = self.timestamp
         self.bg_task = self.loop.create_task(self.report_epics())
         self.bg_rss_task = self.loop.create_task(self.report_latvian_events())
 
@@ -241,50 +97,81 @@ class MyClient(discord.Client):
         return int(time.time())
 
     async def on_ready(self):
-        logger.debug("Client running")
-        logger.debug("------")
+        logger.info("Client running")
+        logger.info("------")
 
     async def on_error(self, event_method, *args, **kwargs):
         logger.warning(f"Ignoring exception in {event_method}")
 
+    async def send_msg(self, channel_id, *args, **kwargs):
+        if PRODUCTION:
+            return self.get_channel(channel_id).send(*args, **kwargs)
+        else:
+            return logger.debug(f"Sending message to: {channel_id}\nArgs: {args}\nKwargs{kwargs}")
+
     async def report_latvian_events(self):
         await self.wait_until_ready()
+        feed_response = None
         while not self.is_closed():
             try:
-                for entry in reversed(feedparser.parse(f"https://www.erepublik.com/en/main/news/military/all/Latvia/0/rss").entries):
+                for country in COUNTRIES.values():
+                    latest_ts = DB.get_rss_feed_timestamp(country.id)
+                    rss_link = f"https://www.erepublik.com/en/main/news/military/all/{country.link}/1/rss"
+                    feed_response = requests.get(rss_link)
+                    feed_response.raise_for_status()
+                    for entry in reversed(feedparser.parse(feed_response.text).entries):
+                        entry_ts = time.mktime(entry["published_parsed"])
+                        entry_link = entry["link"]
+                        # Check if event timestamp is after latest processed event for country
+                        if entry_ts > latest_ts:
+                            DB.set_rss_feed_timestamp(country.id, entry_ts)
+                            title = text = ""
+                            msg = entry["summary"]
+                            dont_send = False
+                            for kind in events:
+                                match = kind.regex.search(msg)
+                                if match:
+                                    values = match.groupdict()
+                                    # Special case for Dictator/Liberation wars
+                                    if "invader" in values and not values["invader"]:
+                                        values["invader"] = values["defender"]
 
-                    entry_ts = time.mktime(entry["published_parsed"])
-                    if entry_ts > self.last_event_timestamp:
-                        msg = entry["summary"]
-                        title = ""
-                        for kind in events:
-                            match = kind.regex.search(msg)
-                            if match:
-                                text = kind.format.format(**dict(match.groupdict(), **{"current_country": "Latvia"}))
-                                title = kind.name
-                                break
-                        else:
-                            has_unknown = True
-                            title = "Unable to parse"
-                            logger.warning(f"Unable to parse: {str(entry)}")
-                            text = msg
+                                    # Special case for resource concession
+                                    if "link" in values:
+                                        __link = values["link"]
+                                        entry_link = __link if __link.startswith("http") else f"https://www.erepublik.com{__link}"
+                                        logger.debug(kind.format.format(**dict(match.groupdict(), **{"current_country": country.name})))
 
-                        self.last_event_timestamp = entry_ts
-                        entry_datetime = datetime.datetime.fromtimestamp(entry_ts, pytz.timezone("US/Pacific"))
-                        embed = discord.Embed(title=title, url=entry["link"], description=text)
-                        embed.set_author(name="eLatvia", icon_url="https://www.erepublik.com/images/flags/L/Latvia.gif")
-                        embed.set_thumbnail(url="https://www.erepublik.net/images/modules/homepage/logo.png")
-                        embed.set_footer(text=f"{entry_datetime.strftime('%F %T')} (eRepublik time)")
+                                    if country.id == 71 or any("Latvia" in v for v in values.values()):
+                                        text = kind.format.format(**dict(match.groupdict(), **{"current_country": country.name}))
+                                        title = kind.name
+                                    else:
+                                        dont_send = True
+                                    break
+                            else:
+                                logger.warning(f"Unable to parse: {str(entry)}")
+                                continue
 
-                        await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
+                            if dont_send:
+                                continue
+
+                            entry_datetime = datetime.datetime.fromtimestamp(entry_ts, pytz.timezone("US/Pacific"))
+                            embed = discord.Embed(title=title, url=entry_link, description=text)
+                            embed.set_author(name=country.name, icon_url=f"https://www.erepublik.com/images/flags/L/{country.link}.gif")
+                            # embed.set_thumbnail(url="https://www.erepublik.net/images/modules/homepage/logo.png")
+                            embed.set_footer(text=f"{entry_datetime.strftime('%F %T')} (eRepublik time)")
+
+                            logger.debug(f"Message sent: {text}")
+                            await self.send_msg(DEFAULT_CHANNEL_ID, embed=embed)
+                            # await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
 
                 await asyncio.sleep((self.timestamp // 300 + 1) * 300 - self.timestamp)
             except Exception as e:
                 logger.error("eRepublik event reader ran into a problem!", exc_info=e)
                 try:
                     with open(f"debug/{self.timestamp}.rss", "w") as f:
-                        f.write(r.text)
-                except NameError:
+                        f.write(feed_response.text)
+                except (NameError, AttributeError):
                     logger.error("There was no Response object!", exc_info=e)
                 await asyncio.sleep(10)
 
@@ -311,7 +198,12 @@ class MyClient(discord.Client):
                                 url=f"https://www.erepublik.com/en/military/battlefield/{battle['id']}",
                                 description=f"Epic battle {UTF_FLAG[invader_id]} vs {UTF_FLAG[defender_id]}!",
                             )
-                            embed.set_footer(f"Round time {s_to_human(self.timestamp - battle['start'])}")
+                            embed.set_footer(text=f"Round time {s_to_human(self.timestamp - battle['start'])}")
+                            logger.debug(
+                                f"Epic battle {UTF_FLAG[invader_id]} vs {UTF_FLAG[defender_id]}! "
+                                f"Round time {s_to_human(self.timestamp - battle['start'])} "
+                                f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
+                            )
                             await self.get_channel(DEFAULT_CHANNEL_ID).send(f"{role_mapping[MENTION_MAPPING[div['div']]]}", embed=embed)
                             DB.add_epic(div.get("id"))
 
@@ -335,10 +227,10 @@ bot = commands.Bot(command_prefix="!")
 
 @bot.event
 async def on_ready():
-    logger.debug("Bot loaded")
+    logger.info("Bot loaded")
     # print(bot.user.name)
     # print(bot.user.id)
-    logger.debug("------")
+    logger.info("------")
 
 
 @bot.command()
@@ -352,7 +244,9 @@ async def exit(ctx):
 
 def main():
     global loop
+    logger.info("Starting Bot loop")
     loop.create_task(bot.start(DISCORD_TOKEN))
+    logger.info("Starting Client loop")
     loop.create_task(client.start(DISCORD_TOKEN))
     loop.run_forever()
 

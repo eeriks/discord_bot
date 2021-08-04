@@ -8,6 +8,8 @@ RUN groupadd -g 1000 discordbot \
 
 USER discordbot
 COPY requirements.txt /app/requirements.txt
-RUN pip install -r requirements.txt
+COPY ./run.sh /run.sh
+RUN pip install -r requirements.txt && chmod +x /run.sh
 
-CMD python discord_bot.py
+#CMD python discord_bot.py
+ENTRYPOINT ['/run.sh', 'docker']

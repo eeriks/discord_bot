@@ -23,11 +23,15 @@ class DiscordDB:
         if "epic" not in self._db.table_names():
             self._db.create_table("epic", {"id": int, "fake": bool}, pk="id", not_null={"id"}, defaults={"fake": False})
 
+        if "rss_feed" not in self._db.table_names():
+            self._db.create_table("rss_feed", {"id": int, "timestamp": float}, pk="id", not_null={"id", "timestamp"})
+
         self._db.vacuum()
 
         self.member = self._db.table("member")
         self.player = self._db.table("player")
         self.epic = self._db.table("epic")
+        self.rss_feed = self._db.table("rss_feed")
 
     # Player methods
 
@@ -133,3 +137,15 @@ class DiscordDB:
             self.epic.insert({"id": division_id})
             return True
         return False
+
+    def get_rss_feed_timestamp(self, country_id: int) -> float:
+        try:
+            return self.rss_feed.get(country_id)["timestamp"]
+        except NotFoundError:
+            return 0
+
+    def set_rss_feed_timestamp(self, country_id: int, timestamp: float):
+        if self.get_rss_feed_timestamp(country_id):
+            self.rss_feed.update(country_id, {"timestamp": timestamp})
+        else:
+            self.rss_feed.insert({"id": country_id, "timestamp": timestamp})

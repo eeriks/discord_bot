@@ -2,7 +2,7 @@ import unittest
 
 from sqlite_utils.db import NotFoundError
 
-from db import DiscordDB
+from dbot.db import DiscordDB
 
 
 class TestDatabase(unittest.TestCase):
@@ -38,3 +38,8 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(self.db.add_epic(123456))
         self.assertFalse(self.db.add_epic(123456))
         self.assertTrue(self.db.get_epic(123456))
+
+    def test_rss_feed(self):
+        self.assertEqual(self.db.get_rss_feed_timestamp(71), 0.0)
+        self.db.set_rss_feed_timestamp(71, 16000000)
+        self.assertEqual(self.db.get_rss_feed_timestamp(71), 16000000.0)
