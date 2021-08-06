@@ -44,6 +44,7 @@ PRODUCTION = bool(os.getenv("PRODUCTION"))
 DB = DiscordDB(DB_NAME)
 
 if PRODUCTION:
+    logger.warning("Production mode enabled!")
     logger.setLevel(logging.INFO)
     _ts = int(time.time())
     for c_id in COUNTRIES.keys():
