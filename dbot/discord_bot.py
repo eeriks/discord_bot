@@ -144,7 +144,7 @@ class MyClient(discord.Client):
                                         logger.debug(kind.format.format(**dict(match.groupdict(), **{"current_country": country.name})))
                                     is_latvia = country.id == 71
                                     has_latvia = any("Latvia" in v for v in values.values())
-                                    is_defender = (kind.name == "Region decured" and country.name in values['defender'])
+                                    is_defender = kind.name == "Region ecured" and country.name in values["defender"]
                                     if is_latvia and has_latvia and is_defender:
                                         text = kind.format.format(**dict(match.groupdict(), **{"current_country": country.name}))
                                         title = kind.name
