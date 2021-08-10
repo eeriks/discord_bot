@@ -5,7 +5,7 @@ from erepublik.constants import COUNTRIES
 
 __all__ = ["events", COUNTRIES, "FLAGS", "UTF_FLAG"]
 
-region = r"[\w\(\)\- ']+"
+region = r"[\w\(\)\-& ']+"
 country = r"(Resistance force of )?[\w\(\)\- ]+"
 citizen = r"[\w\(\)\-\. \d]+"
 

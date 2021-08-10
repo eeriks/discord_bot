@@ -163,7 +163,7 @@ class MyClient(discord.Client):
                             embed.set_footer(text=f"{entry_datetime.strftime('%F %T')} (eRepublik time)")
 
                             logger.debug(f"Message sent: {text}")
-                            await self.send_msg(DEFAULT_CHANNEL_ID, embed=embed)
+                            await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
                             # await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
 
                 await asyncio.sleep((self.timestamp // 300 + 1) * 300 - self.timestamp)
