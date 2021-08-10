@@ -142,8 +142,10 @@ class MyClient(discord.Client):
                                         __link = values["link"]
                                         entry_link = __link if __link.startswith("http") else f"https://www.erepublik.com{__link}"
                                         logger.debug(kind.format.format(**dict(match.groupdict(), **{"current_country": country.name})))
-
-                                    if country.id == 71 or any("Latvia" in v for v in values.values()):
+                                    is_latvia = country.id == 71
+                                    has_latvia = any("Latvia" in v for v in values.values())
+                                    is_defender = (kind.name == "Region decured" and country.name in values['defender'])
+                                    if is_latvia and has_latvia and is_defender:
                                         text = kind.format.format(**dict(match.groupdict(), **{"current_country": country.name}))
                                         title = kind.name
                                     else:
@@ -159,12 +161,10 @@ class MyClient(discord.Client):
                             entry_datetime = datetime.datetime.fromtimestamp(entry_ts, pytz.timezone("US/Pacific"))
                             embed = discord.Embed(title=title, url=entry_link, description=text)
                             embed.set_author(name=country.name, icon_url=f"https://www.erepublik.com/images/flags/L/{country.link}.gif")
-                            # embed.set_thumbnail(url="https://www.erepublik.net/images/modules/homepage/logo.png")
                             embed.set_footer(text=f"{entry_datetime.strftime('%F %T')} (eRepublik time)")
 
                             logger.debug(f"Message sent: {text}")
                             await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
-                            # await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
 
                 await asyncio.sleep((self.timestamp // 300 + 1) * 300 - self.timestamp)
             except Exception as e:
