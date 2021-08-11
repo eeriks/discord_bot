@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List, Tuple
 
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
@@ -26,12 +26,23 @@ class DiscordDB:
         if "rss_feed" not in self._db.table_names():
             self._db.create_table("rss_feed", {"id": int, "timestamp": float}, pk="id", not_null={"id", "timestamp"})
 
+        if "notification_channel" not in self._db.table_names():
+            self._db.create_table(
+                "notification_channel", {"id": int, "guild_id": int, "channel_id": int, "kind": str}, pk="id", not_null={"id", "guild_id", "channel_id"}, defaults={"kind": "epic"}
+            )
+            self._db["notification_channel"].create_index(("guild_id", "channel_id", "kind"), unique=True)
+            self._db.create_table("role_mapping", {"id": int, "channel_id": int, "division": int, "role_id": int}, pk="id", not_null={"id", "channel_id", "division", "role_id"})
+            self._db["role_mapping"].add_foreign_key("channel_id", "notification_channel", "channel_id")
+            self._db["role_mapping"].create_index(("channel_id", "division"), unique=True)
+
         self._db.vacuum()
 
         self.member = self._db.table("member")
         self.player = self._db.table("player")
         self.epic = self._db.table("epic")
         self.rss_feed = self._db.table("rss_feed")
+        self.channel = self._db.table("notification_channel")
+        self.role_mapping = self._db.table("role_mapping")
 
     # Player methods
 
@@ -138,14 +149,50 @@ class DiscordDB:
             return True
         return False
 
+    # RSS Event Methods
+
     def get_rss_feed_timestamp(self, country_id: int) -> float:
+        """Get latest processed RSS Feed event's timestamp for country
+
+        :param country_id: int Country ID
+        :return: timestamp
+        """
         try:
             return self.rss_feed.get(country_id)["timestamp"]
         except NotFoundError:
             return 0
 
-    def set_rss_feed_timestamp(self, country_id: int, timestamp: float):
+    def set_rss_feed_timestamp(self, country_id: int, timestamp: float) -> None:
+        """Set latest processed RSS Feed event's timestamp for country
+
+        :param country_id: int Country ID
+        :param timestamp: float UNIX timestamp
+        """
         if self.get_rss_feed_timestamp(country_id):
             self.rss_feed.update(country_id, {"timestamp": timestamp})
         else:
             self.rss_feed.insert({"id": country_id, "timestamp": timestamp})
+
+    # RSS Event Methods
+
+    def add_notification_channel(self, guild_id: int, channel_id: int, kind: str) -> bool:
+        if channel_id in self.get_kind_notification_channel_ids(kind):
+            return False
+        self.channel.insert({"guild_id": guild_id, "channel_id": channel_id, "kind": kind})
+        return True
+
+    def get_kind_notification_channel_ids(self, kind: str) -> List[int]:
+        return [row["channel_id"] for row in self.channel.rows_where("kind = ?", [kind])]
+
+    def add_role_mapping_entry(self, channel_id: int, division: int, role_id: int) -> bool:
+        if division not in (1, 2, 3, 4, 11):
+            return False
+        try:
+            row = next(self.role_mapping.rows_where("channel_id = ? and division = ?", [channel_id, division]))
+            self.role_mapping.update(row["id"], {"channel_id": channel_id, "division": division, "role_id": role_id})
+        except StopIteration:
+            self.role_mapping.insert({"channel_id": channel_id, "division": division, "role_id": role_id})
+        return True
+
+    def get_notification_channel_and_role_ids_for_division(self, division: int) -> List[Tuple[int, int]]:
+        return [(row["channel_id"], row["role_id"]) for row in self.role_mapping.rows_where("division = ?", (division,))]

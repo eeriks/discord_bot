@@ -56,5 +56,5 @@ class TestRegexes(unittest.TestCase):
             self.assertTrue(event.format)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

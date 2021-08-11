@@ -144,8 +144,7 @@ class MyClient(discord.Client):
                                         logger.debug(kind.format.format(**dict(match.groupdict(), **{"current_country": country.name})))
                                     is_latvia = country.id == 71
                                     has_latvia = any("Latvia" in v for v in values.values())
-                                    is_defender = kind.name == "Region ecured" and country.name in values["defender"]
-                                    if is_latvia and has_latvia and is_defender:
+                                    if is_latvia or has_latvia:
                                         text = kind.format.format(**dict(match.groupdict(), **{"current_country": country.name}))
                                         title = kind.name
                                     else:
@@ -164,7 +163,8 @@ class MyClient(discord.Client):
                             embed.set_footer(text=f"{entry_datetime.strftime('%F %T')} (eRepublik time)")
 
                             logger.debug(f"Message sent: {text}")
-                            await self.get_channel(DEFAULT_CHANNEL_ID).send(embed=embed)
+                            for channel_id in DB.get_kind_notification_channel_ids("events"):
+                                await self.get_channel(channel_id).send(embed=embed)
 
                 await asyncio.sleep((self.timestamp // 300 + 1) * 300 - self.timestamp)
             except Exception as e:
@@ -178,8 +178,6 @@ class MyClient(discord.Client):
 
     async def report_epics(self):
         await self.wait_until_ready()
-        roles = [role for role in self.get_guild(300297668553605131).roles if role.name in MENTION_MAPPING.values()]
-        role_mapping = {role.name: role.mention for role in roles}
         while not self.is_closed():
             try:
                 r = get_battle_page()
@@ -205,7 +203,13 @@ class MyClient(discord.Client):
                                 f"Round time {s_to_human(self.timestamp - battle['start'])} "
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
                             )
-                            await self.get_channel(DEFAULT_CHANNEL_ID).send(f"{role_mapping[MENTION_MAPPING[div['div']]]}", embed=embed)
+                            notified_channels = []
+                            for channel_id, role_id in DB.get_notification_channel_and_role_ids_for_division(div["div"]):
+                                await self.get_channel(channel_id).send(f"<@&{role_id}> epic", embed=embed)
+                                notified_channels.append(channel_id)
+                            for channel_id in DB.get_kind_notification_channel_ids("epic"):
+                                if channel_id not in notified_channels:
+                                    await self.get_channel(channel_id).send(embed=embed)
                             DB.add_epic(div.get("id"))
 
                 sleep_seconds = r.get("last_updated") + 60 - self.timestamp
@@ -232,6 +236,49 @@ async def on_ready():
     # print(bot.user.name)
     # print(bot.user.id)
     logger.info("------")
+
+
+@bot.command()
+async def notify(ctx, kind: str):
+    if ctx.author.guild_permissions.administrator:
+        guild_id = ctx.guild.id
+        channel_id = ctx.channel.id
+        if kind == "epic":
+            if DB.add_notification_channel(guild_id, channel_id, kind):
+                await ctx.send("I will notify about epics in this channel!")
+                await ctx.send(
+                    "If You want for me to also add division mentions write:\n"
+                    "`!set_division d1 @role_to_mention`\n"
+                    "`!set_division d2 @role_to_mention`\n"
+                    "`!set_division d3 @role_to_mention`\n"
+                    "`!set_division d4 @role_to_mention`\n"
+                    "`!set_division air @role_to_mention`"
+                )
+        elif kind == "events":
+            DB.add_notification_channel(guild_id, channel_id, kind)
+            await ctx.send("I will notify about eLatvia's events in this channel!")
+        else:
+            await ctx.send(f"Unknown {kind=}")
+    else:
+        return await ctx.send("This command is only available for server administrators")
+
+
+@bot.command()
+async def set_division(ctx, division: str, role_mention):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.send("This command is only available for server administrators")
+    if ctx.channel.id not in DB.get_kind_notification_channel_ids("epic"):
+        return await ctx.send("This command is only available from registered channels!")
+    div_map = dict(D1=1, D2=3, D3=3, D4=4, Air=11)
+
+    if division.title() not in div_map:
+        return await ctx.send(f"Unknown {division=}! Available divisions {', '.join(div_map.keys())}")
+    for role in ctx.guild.roles:
+        if role.mention == role_mention:
+            DB.add_role_mapping_entry(ctx.channel.id, div_map[division.title()], role.id)
+            return await ctx.send(f"Success! For {division.title()} epics I will mention <@&{role.id}>")
+    else:
+        await ctx.send(f"Unable to find the role You mentioned...")
 
 
 @bot.command()
