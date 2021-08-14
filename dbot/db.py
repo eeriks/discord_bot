@@ -1,7 +1,9 @@
 from typing import Dict, Optional, Union, List, Tuple
-
+import logging
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class DiscordDB:
@@ -182,7 +184,16 @@ class DiscordDB:
         return True
 
     def get_kind_notification_channel_ids(self, kind: str) -> List[int]:
-        return [row["channel_id"] for row in self.channel.rows_where("kind = ?", [kind])]
+        channels = [row["channel_id"] for row in self.channel.rows_where("kind = ?", [kind])]
+        logger.info(f"Found {len(channels)} channels for {kind} kind: {channels}")
+        return channels
+
+    def remove_kind_notification_channel(self, kind, channel_id) -> bool:
+        if channel_id in self.get_kind_notification_channel_ids(kind):
+            logger.warning(f"removing channel with id {channel_id}")
+            self.channel.delete_where("kind = ? and channel_id = ?", (kind, channel_id))
+            return True
+        return False
 
     def add_role_mapping_entry(self, channel_id: int, division: int, role_id: int) -> bool:
         if division not in (1, 2, 3, 4, 11):
@@ -194,5 +205,8 @@ class DiscordDB:
             self.role_mapping.insert({"channel_id": channel_id, "division": division, "role_id": role_id})
         return True
 
-    def get_notification_channel_and_role_ids_for_division(self, division: int) -> List[Tuple[int, int]]:
-        return [(row["channel_id"], row["role_id"]) for row in self.role_mapping.rows_where("division = ?", (division,))]
+    def get_role_id_for_channel_division(self, channel_id: int, division: int) -> Optional[int]:
+        rows = self.role_mapping.rows_where('channel_id = ? and division = ?', (channel_id, division))
+        for row in rows:
+            return row['role_id']
+

@@ -195,7 +195,8 @@ class MyClient(discord.Client):
                             embed = discord.Embed(
                                 title=" ".join(div.get("intensity_scale").split("_")).title(),
                                 url=f"https://www.erepublik.com/en/military/battlefield/{battle['id']}",
-                                description=f"Epic battle {UTF_FLAG[invader_id]} vs {UTF_FLAG[defender_id]}!",
+                                description=f"Epic battle {UTF_FLAG[invader_id]} vs {UTF_FLAG[defender_id]}!\n"
+                                            f"Battle for {battle['region']['name']}, Round {battle['zone_id']}",
                             )
                             embed.set_footer(text=f"Round time {s_to_human(self.timestamp - battle['start'])}")
                             logger.debug(
@@ -203,12 +204,10 @@ class MyClient(discord.Client):
                                 f"Round time {s_to_human(self.timestamp - battle['start'])} "
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
                             )
-                            notified_channels = []
-                            for channel_id, role_id in DB.get_notification_channel_and_role_ids_for_division(div["div"]):
-                                await self.get_channel(channel_id).send(f"<@&{role_id}> epic", embed=embed)
-                                notified_channels.append(channel_id)
                             for channel_id in DB.get_kind_notification_channel_ids("epic"):
-                                if channel_id not in notified_channels:
+                                if role_id := DB.get_role_id_for_channel_division(channel_id, division):
+                                    await self.get_channel(channel_id).send(f"<@&{role_id}>", embed=embed)
+                                else:
                                     await self.get_channel(channel_id).send(embed=embed)
                             DB.add_epic(div.get("id"))
 
@@ -236,6 +235,15 @@ async def on_ready():
     # print(bot.user.name)
     # print(bot.user.id)
     logger.info("------")
+
+
+@bot.command()
+async def unnotify(ctx, kind: str):
+    if ctx.author.guild_permissions.administrator:
+        channel_id = ctx.channel.id
+        if DB.remove_kind_notification_channel(kind, channel_id):
+            return await ctx.send(f"I wont notify about {kind} in this channel!")
+    return await ctx.send("Nothing to do...")
 
 
 @bot.command()

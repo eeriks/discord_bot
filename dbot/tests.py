@@ -45,6 +45,13 @@ class TestDatabase(unittest.TestCase):
         self.db.set_rss_feed_timestamp(71, 16000000)
         self.assertEqual(self.db.get_rss_feed_timestamp(71), 16000000.0)
 
+    def test_channels(self):
+        self.assertTrue(self.db.add_notification_channel(13, 16, "epic"))
+        self.assertFalse(self.db.add_notification_channel(13, 16, "epic"))
+        self.assertListEqual(self.db.get_kind_notification_channel_ids("epic"), [16])
+        self.assertTrue(self.db.remove_kind_notification_channel("epic", 16))
+        self.assertFalse(self.db.remove_kind_notification_channel("epic", 16))
+
 
 class TestRegexes(unittest.TestCase):
     def test_events(self):
