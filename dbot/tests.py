@@ -49,8 +49,17 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(self.db.add_notification_channel(13, 16, "epic"))
         self.assertFalse(self.db.add_notification_channel(13, 16, "epic"))
         self.assertListEqual(self.db.get_kind_notification_channel_ids("epic"), [16])
+        self.assertFalse(self.db.add_role_mapping_entry(16, 5, 160003))
+        self.assertTrue(self.db.add_role_mapping_entry(16, 3, 160003))
+        self.assertTrue(self.db.add_role_mapping_entry(16, 4, 160003))
+        self.assertTrue(self.db.add_role_mapping_entry(16, 4, 160004))
+        self.assertEqual(self.db.get_role_id_for_channel_division(16, 3), 160003)
+        self.assertEqual(self.db.get_role_id_for_channel_division(16, 4), 160004)
         self.assertTrue(self.db.remove_kind_notification_channel("epic", 16))
         self.assertFalse(self.db.remove_kind_notification_channel("epic", 16))
+        self.assertFalse(self.db.get_role_id_for_channel_division(16, 3))
+        self.assertFalse(self.db.get_role_id_for_channel_division(16, 4))
+        self.assertFalse(self.db.get_role_id_for_channel_division(16, 5))
 
 
 class TestRegexes(unittest.TestCase):

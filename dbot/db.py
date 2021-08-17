@@ -192,8 +192,12 @@ class DiscordDB:
         if channel_id in self.get_kind_notification_channel_ids(kind):
             logger.warning(f"removing channel with id {channel_id}")
             self.channel.delete_where("kind = ? and channel_id = ?", (kind, channel_id))
+            self.remove_role_mappings(channel_id)
             return True
         return False
+
+    def remove_role_mappings(self, channel_id: int):
+        return self.role_mapping.delete_where("channel_id = ?", (channel_id, ))
 
     def add_role_mapping_entry(self, channel_id: int, division: int, role_id: int) -> bool:
         if division not in (1, 2, 3, 4, 11):
