@@ -205,7 +205,7 @@ class MyClient(discord.Client):
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
                             )
                             for channel_id in DB.get_kind_notification_channel_ids("epic"):
-                                if role_id := DB.get_role_id_for_channel_division(channel_id, division):
+                                if role_id := DB.get_role_id_for_channel_division(channel_id, division=div['div']):
                                     await self.get_channel(channel_id).send(f"<@&{role_id}>", embed=embed)
                                 else:
                                     await self.get_channel(channel_id).send(embed=embed)
