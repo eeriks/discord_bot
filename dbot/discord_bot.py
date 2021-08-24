@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from json import JSONDecodeError
+from operator import itemgetter
 from typing import Union
 
 import discord
@@ -61,6 +62,10 @@ __last_battle_update_timestamp = 0
 
 def timestamp_to_datetime(timestamp: int) -> datetime.datetime:
     return datetime.datetime.fromtimestamp(timestamp)
+
+
+def timestamp_now() -> int:
+    return int(datetime.datetime.now().timestamp())
 
 
 def s_to_human(seconds: Union[int, float]) -> str:
@@ -195,8 +200,7 @@ class MyClient(discord.Client):
                             embed = discord.Embed(
                                 title=" ".join(div.get("intensity_scale").split("_")).title(),
                                 url=f"https://www.erepublik.com/en/military/battlefield/{battle['id']}",
-                                description=f"Epic battle {UTF_FLAG[invader_id]} vs {UTF_FLAG[defender_id]}!\n"
-                                            f"Battle for {battle['region']['name']}, Round {battle['zone_id']}",
+                                description=f"Epic battle {UTF_FLAG[invader_id]} vs {UTF_FLAG[defender_id]}!\n" f"Battle for {battle['region']['name']}, Round {battle['zone_id']}",
                             )
                             embed.set_footer(text=f"Round time {s_to_human(self.timestamp - battle['start'])}")
                             logger.debug(
@@ -205,7 +209,7 @@ class MyClient(discord.Client):
                                 f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
                             )
                             for channel_id in DB.get_kind_notification_channel_ids("epic"):
-                                if role_id := DB.get_role_id_for_channel_division(channel_id, division=div['div']):
+                                if role_id := DB.get_role_id_for_channel_division(channel_id, division=div["div"]):
                                     await self.get_channel(channel_id).send(f"<@&{role_id}>", embed=embed)
                                 else:
                                     await self.get_channel(channel_id).send(embed=embed)
@@ -295,7 +299,70 @@ async def exit(ctx):
         await ctx.send(f"{ctx.author.mention} Bye!")
         sys.exit(0)
     else:
-        await ctx.send(f"Labs mēģinājums! Mani nogalināt var tikai <@{ADMIN_ID}>")
+        return await ctx.send(f"Labs mēģinājums! Mani nogalināt var tikai <@{ADMIN_ID}>")
+
+
+def get_empty_medals(division_id: int, minutes: int = 30):
+    minutes = minutes if minutes > 0 else 60
+    r = get_battle_page()
+    if not isinstance(r.get("battles"), dict):
+        return
+    for battle in sorted(r.get("battles", {}).values(), key=itemgetter("start")):
+        if battle["start"] > timestamp_now() - minutes * 60:
+            continue
+        battle_url = f"https://www.erepublik.com/en/military/battlefield/{battle['id']}"
+        invader_id = battle["inv"]["id"]
+        defender_id = battle["def"]["id"]
+        for div in battle.get("div", {}).values():
+            if not div["div"] == division_id or div.get('end'):
+                continue
+            domination = div.get("wall", {}).get("dom")
+            value = f"[Battle for {battle['region']['name']}]({battle_url})"
+            ret = dict(
+                region=battle["region"]["name"],
+                round_time=s_to_human(timestamp_now() - battle["start"]),
+                sides=[],
+                url=f"https://www.erepublik.com/en/military/battlefield/{battle['id']}",
+                zone_id=battle["zone_id"],
+            )
+            if domination == 50:
+                ret["sides"] = [UTF_FLAG[invader_id], UTF_FLAG[defender_id]]
+            if domination == 100:
+                ret["sides"] = [UTF_FLAG[invader_id if defender_id == div["wall"]["for"] else defender_id]]
+            if ret["sides"]:
+                yield ret
+
+
+@bot.command()
+async def empty(ctx, division, minutes: int = 30):
+    try:
+        div = int(division)
+    except ValueError:
+        div = dict(D1=1, D2=3, D3=3, D4=4, Air=11)[division.title()]
+    except (AttributeError, KeyError):
+        return await ctx.send(f"First argument must be a value from: 1, d1, 2, d2, 3, d3, 4, d4, 11, air!")
+    s_div = {1: "D1", 2: "D2", 3: "D3", 4: "D4", 11: "Air"}[div]
+    embed = discord.Embed(
+        title=f"Possibly empty {s_div} medals",
+        description=f"'Empty' medals are being guessed based on the division wall. Expect false-positives!",
+    )
+    for med in get_empty_medals(div, minutes):
+        embed.add_field(
+            name=f"**Battle for {med['region']} {' '.join(med['sides'])}**",
+            value=f"[R{med['zone_id']} | Time {med['round_time']}]({med['url']})",
+        )
+        if len(embed.fields) >= 20:
+            await ctx.send(embed=embed)
+            embed.clear_fields()
+    if embed.fields:
+        return await ctx.send(embed=embed)
+    else:
+        return await ctx.send(f"No empty {s_div} medals found")
+
+@empty.error
+async def division_error(ctx, error):
+    if isinstance(error, (commands.BadArgument, commands.MissingRequiredArgument)):
+        await ctx.send('Division is mandatory, eg, `!empty [1,2,3,4,11, d1,d2,d3,d4,air, D1,D2,D3,D4,Air] [1-120]`')
 
 
 def main():

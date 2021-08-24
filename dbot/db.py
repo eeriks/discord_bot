@@ -197,7 +197,7 @@ class DiscordDB:
         return False
 
     def remove_role_mappings(self, channel_id: int):
-        return self.role_mapping.delete_where("channel_id = ?", (channel_id, ))
+        return self.role_mapping.delete_where("channel_id = ?", (channel_id,))
 
     def add_role_mapping_entry(self, channel_id: int, division: int, role_id: int) -> bool:
         if division not in (1, 2, 3, 4, 11):
@@ -210,7 +210,6 @@ class DiscordDB:
         return True
 
     def get_role_id_for_channel_division(self, channel_id: int, division: int) -> Optional[int]:
-        rows = self.role_mapping.rows_where('channel_id = ? and division = ?', (channel_id, division))
+        rows = self.role_mapping.rows_where("channel_id = ? and division = ?", (channel_id, division))
         for row in rows:
-            return row['role_id']
-
+            return row["role_id"]
