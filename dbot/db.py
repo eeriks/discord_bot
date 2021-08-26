@@ -1,9 +1,7 @@
-from typing import Dict, Optional, Union, List, Tuple
-import logging
+from typing import Dict, List, Optional, Union
+
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
-
-logger = logging.getLogger(__name__)
 
 
 class DiscordDB:
@@ -11,40 +9,42 @@ class DiscordDB:
     _db: Database
 
     def __init__(self, db_name: str = ""):
-        self._name = db_name
-        if not self._name:
-            self._db = Database(memory=True)
-        else:
-            self._db = Database(self._name)
-        if "member" not in self._db.table_names():
-            self._db.create_table("member", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
+        self._db = Database(db_name) if db_name else Database(memory=True)
 
-        if "player" not in self._db.table_names():
-            self._db.create_table("player", {"id": int, "name": str}, pk="id", not_null={"id", "name"})
-
-        if "epic" not in self._db.table_names():
-            self._db.create_table("epic", {"id": int, "fake": bool}, pk="id", not_null={"id"}, defaults={"fake": False})
-
-        if "rss_feed" not in self._db.table_names():
-            self._db.create_table("rss_feed", {"id": int, "timestamp": float}, pk="id", not_null={"id", "timestamp"})
-
-        if "notification_channel" not in self._db.table_names():
-            self._db.create_table(
-                "notification_channel", {"id": int, "guild_id": int, "channel_id": int, "kind": str}, pk="id", not_null={"id", "guild_id", "channel_id"}, defaults={"kind": "epic"}
-            )
-            self._db["notification_channel"].create_index(("guild_id", "channel_id", "kind"), unique=True)
-            self._db.create_table("role_mapping", {"id": int, "channel_id": int, "division": int, "role_id": int}, pk="id", not_null={"id", "channel_id", "division", "role_id"})
-            self._db["role_mapping"].add_foreign_key("channel_id", "notification_channel", "channel_id")
-            self._db["role_mapping"].create_index(("channel_id", "division"), unique=True)
-
-        self._db.vacuum()
+        self.initialize()
 
         self.member = self._db.table("member")
         self.player = self._db.table("player")
-        self.epic = self._db.table("epic")
+        self.division = self._db.table("division")
         self.rss_feed = self._db.table("rss_feed")
-        self.channel = self._db.table("notification_channel")
+        self.channel = self._db.table("channel")
         self.role_mapping = self._db.table("role_mapping")
+
+    def initialize(self):
+        hard_tables = ["member", "player", "channel", "role_mapping"]
+        db_tables = self._db.table_names()
+        if "member" not in db_tables:
+            self._db.create_table("member", {"name": str, "pm_is_allowed": bool}, pk="id", not_null={"name", "pm_is_allowed"}, defaults={"pm_is_allowed": False})
+        if "player" not in db_tables:
+            self._db.create_table("player", {"name": str}, pk="id", not_null={"name"})
+        if "notification_channel" in db_tables or "channel" not in db_tables:
+            self._db.create_table("channel", {"guild_id": int, "channel_id": int, "kind": str}, pk="id", not_null={"guild_id", "channel_id", "kind"}, defaults={"kind": "epic"})
+            self._db["channel"].create_index(("guild_id", "channel_id", "kind"), unique=True)
+            for row in self._db.table("notification_channel").rows:
+                self._db["channel"].insert(**row)
+        if "role_mapping" not in db_tables:
+            self._db.create_table("role_mapping", {"channel_id": int, "division": int, "role_id": int}, pk="id", not_null={"channel_id", "division", "role_id"})
+            self._db["role_mapping"].add_foreign_key("channel_id", "channel", "id")
+            self._db["role_mapping"].create_index(("channel_id", "division"), unique=True)
+
+        for table in self._db.table_names():
+            if table not in hard_tables:
+                self._db.table(table).drop(ignore=True)
+
+        self._db.create_table("division", {"division_id": int, "epic": bool, "empty": bool}, pk="id", defaults={"epic": False, "empty": False}, not_null={"division_id"})
+        self._db.create_table("rss_feed", {"timestamp": float}, pk="id", not_null={"timestamp"})
+
+        self._db.vacuum()
 
     # Player methods
 
@@ -87,7 +87,7 @@ class DiscordDB:
 
     # Member methods
 
-    def get_member(self, member_id) -> Dict[str, Union[int, str]]:
+    def get_member(self, member_id) -> Optional[Dict[str, Union[int, str]]]:
         """Get discord member
 
         :param member_id: int Discord Member ID
@@ -98,56 +98,85 @@ class DiscordDB:
         try:
             return self.member.get(member_id)
         except NotFoundError:
-            raise NotFoundError("Member with given id not found")
+            return
 
-    def add_member(self, id: int, name: str) -> Dict[str, Union[int, str]]:
+    def add_member(self, id: int, name: str, pm_is_allowed: bool = False) -> Dict[str, Union[int, str]]:
         """Add discord member.
 
         :param id: int Discord member ID
         :param name: Discord member Name
+        :param pm_is_allowed: Allow discord member to contact bot through PMs
         """
         try:
-            self.member.insert({"id": id, "name": name})
+            self.member.insert({"id": id, "name": name, "pm_is_allowed": pm_is_allowed})
         finally:
             return self.member.get(id)
 
-    def update_member(self, member_id: int, name: str) -> bool:
+    def update_member(self, member_id: int, name: str, pm_is_allowed: bool = None) -> bool:
         """Update discord member"s record
 
         :param member_id: Discord Mention ID
-        :type member_id: int Discord Mention ID
+        :type member_id: int
         :param name: Discord user name
-        :type name: str Discord user name
+        :type name: str
+        :param pm_is_allowed: Is discord user allowed to interact through PMs
+        :type pm_is_allowed: Optional[bool]
         :return: bool
         """
-        try:
-            member = self.get_member(member_id)
-        except NotFoundError:
-            member = self.add_member(member_id, name)
-        self.member.update(member["id"], {"name": name})
+        member = self.get_member(member_id)
+        if member:
+            if pm_is_allowed is None:
+                pm_is_allowed = self.member.get(member_id).get("pm_is_allowed")
+            self.member.update(member["id"], {"name": name, "pm_is_allowed": pm_is_allowed})
+            return True
+        self.add_member(member_id, name)
         return True
 
     # Epic Methods
 
-    def get_epic(self, division_id: int) -> Optional[Dict[str, Union[int, str]]]:
+    def check_epic(self, division_id: int) -> bool:
+        """Check if epic has been registered in the division
+
+        :param division_id: int Division ID
+        :return: bool
+        """
+        try:
+            return bool(next(self.division.rows_where("division_id = ? and epic = ?", (division_id, True))))
+        except StopIteration:
+            return False
+
+    def add_epic(self, division_id: int) -> bool:
+        """Register epic in division.
+
+        :param division_id: int Epic division ID
+        :return: bool Epic division added
+        """
+        if not self.check_epic(division_id):
+            self.division.insert({"division_id": division_id, "epic": True})
+            return True
+        return False
+
+    # Epic Methods
+
+    def check_empty_medal(self, division_id: int) -> bool:
         """Get Epic division
 
         :param division_id: int Division ID
         :return: division id
         """
         try:
-            return self.epic.get(division_id)
-        except NotFoundError:
-            return None
+            return bool(next(self.division.rows_where("division_id = ? and empty = ?", (division_id, True))))
+        except StopIteration:
+            return False
 
-    def add_epic(self, division_id: int) -> bool:
+    def add_empty_medal(self, division_id: int) -> bool:
         """Add Epic division.
 
         :param division_id: int Epic division ID
         :return: bool Epic division added
         """
-        if not self.get_epic(division_id):
-            self.epic.insert({"id": division_id})
+        if not self.check_empty_medal(division_id):
+            self.division.insert({"division_id": division_id, "empty": True})
             return True
         return False
 
@@ -175,7 +204,7 @@ class DiscordDB:
         else:
             self.rss_feed.insert({"id": country_id, "timestamp": timestamp})
 
-    # RSS Event Methods
+    # Notification methods
 
     def add_notification_channel(self, guild_id: int, channel_id: int, kind: str) -> bool:
         if channel_id in self.get_kind_notification_channel_ids(kind):
@@ -185,31 +214,50 @@ class DiscordDB:
 
     def get_kind_notification_channel_ids(self, kind: str) -> List[int]:
         channels = [row["channel_id"] for row in self.channel.rows_where("kind = ?", [kind])]
-        logger.info(f"Found {len(channels)} channels for {kind} kind: {channels}")
         return channels
+
+    def get_notification_channel_id(self, kind: str, *, guild_id: int = None, channel_id: int = None) -> Optional[int]:
+        if guild_id is None and channel_id is None:
+            raise RuntimeError("Must provide either guild_id or channel_id!")
+        for row in self.channel.rows_where(f"kind = ? and {'guild_id' if guild_id is not None else 'channel_id'} = ?", [kind, guild_id or channel_id]):
+            return row["id"]
 
     def remove_kind_notification_channel(self, kind, channel_id) -> bool:
         if channel_id in self.get_kind_notification_channel_ids(kind):
-            logger.warning(f"removing channel with id {channel_id}")
+            self.remove_all_channel_role_mappings(channel_id, kind)
             self.channel.delete_where("kind = ? and channel_id = ?", (kind, channel_id))
-            self.remove_role_mappings(channel_id)
             return True
         return False
 
-    def remove_role_mappings(self, channel_id: int):
-        return self.role_mapping.delete_where("channel_id = ?", (channel_id,))
+    # Role mapping methods
 
-    def add_role_mapping_entry(self, channel_id: int, division: int, role_id: int) -> bool:
+    def add_role_mapping_entry(self, kind: str, channel_id: int, division: int, role_id: int) -> bool:
+        ch_id = self.get_notification_channel_id(kind, channel_id=channel_id)
         if division not in (1, 2, 3, 4, 11):
             return False
         try:
-            row = next(self.role_mapping.rows_where("channel_id = ? and division = ?", [channel_id, division]))
-            self.role_mapping.update(row["id"], {"channel_id": channel_id, "division": division, "role_id": role_id})
+            row = next(self.role_mapping.rows_where("channel_id = ? and division = ?", [ch_id, division]))
+            self.role_mapping.update(row["id"], {"channel_id": ch_id, "division": division, "role_id": role_id})
         except StopIteration:
-            self.role_mapping.insert({"channel_id": channel_id, "division": division, "role_id": role_id})
+            self.role_mapping.insert({"channel_id": ch_id, "division": division, "role_id": role_id})
         return True
 
-    def get_role_id_for_channel_division(self, channel_id: int, division: int) -> Optional[int]:
-        rows = self.role_mapping.rows_where("channel_id = ? and division = ?", (channel_id, division))
+    def remove_all_channel_role_mappings(self, channel_id: int, kind: str):
+        ch_id = self.get_notification_channel_id(kind, channel_id=channel_id)
+        for d in (1, 2, 3, 4, 11):
+            self.remove_role_mapping(kind, ch_id, d)
+
+    def remove_role_mapping(self, kind: str, channel_id: int, division_id: int) -> bool:
+        try:
+            ch_id = self.get_notification_channel_id(kind, channel_id=channel_id)
+            row = next(self.role_mapping.rows_where("channel_id = ? and division = ? ", (ch_id, division_id)))
+            self.role_mapping.delete(row["id"])
+            return True
+        except StopIteration:
+            return False
+
+    def get_role_id_for_channel_division(self, *, kind: str, channel_id: int, division: int) -> Optional[int]:
+        ch_id = self.get_notification_channel_id(kind, channel_id=channel_id)
+        rows = self.role_mapping.rows_where("channel_id = ? and division = ?", (ch_id, division))
         for row in rows:
             return row["role_id"]

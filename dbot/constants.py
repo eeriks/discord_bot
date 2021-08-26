@@ -1,9 +1,9 @@
 import re
-from typing import NamedTuple
+from typing import Any, Dict, List, NamedTuple, TypedDict
 
 from erepublik.constants import COUNTRIES
 
-__all__ = ["events", COUNTRIES, "FLAGS", "UTF_FLAG"]
+__all__ = ["events", "COUNTRIES", "UTF_FLAG", "DivisionData"]
 
 region = r"[\w\(\)\-& ']+"
 country = r"(Resistance force of )?[\w\(\)\- ]+"
@@ -191,9 +191,9 @@ events = [
         "Res Concession",
         re.compile(
             rf"A Resource Concession law to //www.erepublik.com<b>(?P<target>{country})</b> "
-            rf'<a href="(?P<link>((https?:)?//www\.erepublik\.com)?/en/main/law/(?P<source>{country}/\d+))">has been (?P<result>.*?)</a>'
+            rf'<a href="(?P<link>((https?:)?//www\.erepublik\.com)?/en/main/law/(?P<source>{country})/\d+)">has been (?P<result>.*?)</a>'
         ),
-        "Resource Concession law between {current_country} and {target} has been {result}",
+        "Resource Concession law between {source} and {target} has been {result}",
     ),
     EventKind(
         "cp_impeachment",
@@ -258,13 +258,13 @@ events = [
     EventKind(
         "new_welcome_message_proposed",
         "New Welcome message has been proposed",
-        re.compile(r"President of (?P<country>{country}) proposed a new welcome message for new citizens"),
+        re.compile(rf"President of (?P<country>{country}) proposed a new welcome message for new citizens"),
         "{country} proposed new welcome message!",
     ),
     EventKind(
         "new_welcome_message_approved",
         "New Welcome message has been approved",
-        re.compile(r"(?P<country>{country}) now has a new welcoming message for new citizens"),
+        re.compile(rf"(?P<country>{country}) now has a new welcoming message for new citizens"),
         "{country} approved new welcome message!",
     ),
 ]
@@ -345,79 +345,14 @@ UTF_FLAG = {
     170: "🇳🇬",
     171: "🇨🇺",
 }
-FLAGS = {
-    1: "flag_ro",
-    9: "flag_br",
-    10: "flag_it",
-    11: "flag_fr",
-    12: "flag_de",
-    13: "flag_hu",
-    14: "flag_cn",
-    15: "flag_es",
-    23: "flag_ca",
-    24: "flag_us",
-    26: "flag_mx",
-    27: "flag_ar",
-    28: "flag_ve",
-    29: "flag_gb",
-    30: "flag_ch",
-    31: "flag_nl",
-    32: "flag_be",
-    33: "flag_at",
-    34: "flag_cz",
-    35: "flag_pl",
-    36: "flag_sk",
-    37: "flag_no",
-    38: "flag_se",
-    39: "flag_fi",
-    40: "flag_ua",
-    41: "flag_ru",
-    42: "flag_bg",
-    43: "flag_tr",
-    44: "flag_gr",
-    45: "flag_jp",
-    47: "flag_kr",
-    48: "flag_in",
-    49: "flag_id",
-    50: "flag_au",
-    51: "flag_za",
-    52: "flag_md",
-    53: "flag_pt",
-    54: "flag_ie",
-    55: "flag_de",
-    56: "flag_ir",
-    57: "flag_pk",
-    58: "flag_il",
-    59: "flag_th",
-    61: "flag_si",
-    63: "flag_hr",
-    64: "flag_cl",
-    65: "flag_rs",
-    66: "flag_my",
-    67: "flag_ph",
-    68: "flag_sg",
-    69: "flag_ba",
-    70: "flag_ee",
-    71: "flag_lv",
-    72: "flag_lt",
-    73: "flag_kp",
-    74: "flag_uy",
-    75: "flag_py",
-    76: "flag_bo",
-    77: "flag_pe",
-    78: "flag_co",
-    79: "flag_mk",
-    80: "flag_me",
-    81: "flag_tw",
-    82: "flag_cy",
-    83: "flag_by",
-    84: "flag_nz",
-    164: "flag_sa",
-    165: "flag_eg",
-    166: "flag_ae",
-    167: "flag_al",
-    168: "flag_ge",
-    169: "flag_am",
-    170: "flag_ng",
-    171: "flag_cu",
-}
+
+
+class DivisionData(TypedDict):
+    region: str
+    round_time: str
+    round_time_s: int
+    sides: List[str]
+    url: str
+    zone_id: int
+    div_id: int
+    extra: Dict[str, Any]
