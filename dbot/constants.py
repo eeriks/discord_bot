@@ -255,6 +255,18 @@ events = [
         re.compile(r"New taxes for (?P<product>[\w ]+) were proposed"),
         "{current_country} proposed new taxes for {product}",
     ),
+    EventKind(
+        "new_welcome_message_proposed",
+        "New Welcome message has been proposed",
+        re.compile(r"President of (?P<country>{country}) proposed a new welcome message for new citizens"),
+        "{country} proposed new welcome message!",
+    ),
+    EventKind(
+        "new_welcome_message_approved",
+        "New Welcome message has been approved",
+        re.compile(r"(?P<country>{country}) now has a new welcoming message for new citizens"),
+        "{country} approved new welcome message!",
+    ),
 ]
 
 UTF_FLAG = {
