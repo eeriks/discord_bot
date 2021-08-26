@@ -335,12 +335,16 @@ def get_empty_medals(division_id: int, minutes: int = 30):
 
 @bot.command()
 async def empty(ctx, division, minutes: int = 30):
+    if not ctx.channel.id == 603527159109124096:
+        return await ctx.send("Currently unavailable!")
     try:
         div = int(division)
     except ValueError:
-        div = dict(D1=1, D2=3, D3=3, D4=4, Air=11)[division.title()]
-    except (AttributeError, KeyError):
-        return await ctx.send(f"First argument must be a value from: 1, d1, 2, d2, 3, d3, 4, d4, 11, air!")
+        try:
+            div = dict(D1=1, D2=3, D3=3, D4=4, Air=11)[division.title()]
+        except (AttributeError, KeyError) as e:
+            await ctx.send(f"First argument must be a value from: 1, d1, 2, d2, 3, d3, 4, d4, 11, air!")
+            return
     s_div = {1: "D1", 2: "D2", 3: "D3", 4: "D4", 11: "Air"}[div]
     embed = discord.Embed(
         title=f"Possibly empty {s_div} medals",
@@ -351,7 +355,7 @@ async def empty(ctx, division, minutes: int = 30):
             name=f"**Battle for {med['region']} {' '.join(med['sides'])}**",
             value=f"[R{med['zone_id']} | Time {med['round_time']}]({med['url']})",
         )
-        if len(embed.fields) >= 20:
+        if len(embed.fields) >= 10:
             await ctx.send(embed=embed)
             embed.clear_fields()
     if embed.fields:
@@ -363,6 +367,9 @@ async def empty(ctx, division, minutes: int = 30):
 async def division_error(ctx, error):
     if isinstance(error, (commands.BadArgument, commands.MissingRequiredArgument)):
         await ctx.send('Division is mandatory, eg, `!empty [1,2,3,4,11, d1,d2,d3,d4,air, D1,D2,D3,D4,Air] [1-120]`')
+    else:
+        await ctx.send('Something went wrong! 😔')
+        logger.exception(error, exc_info=error)
 
 
 def main():
