@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List, Optional, Union
 
 from sqlite_utils import Database
@@ -25,13 +26,28 @@ class DiscordDB:
         db_tables = self._db.table_names()
         if "member" not in db_tables:
             self._db.create_table("member", {"name": str, "pm_is_allowed": bool}, pk="id", not_null={"name", "pm_is_allowed"}, defaults={"pm_is_allowed": False})
+        else:
+            self._db.create_table("member_tmp", {"name": str, "pm_is_allowed": bool}, pk="id", not_null={"name", "pm_is_allowed"}, defaults={"pm_is_allowed": False})
+            for row in self._db.table("member").rows:
+                self._db["member_tmp"].insert(row)
+                logging.info(f"Moving row {row} to tmp member table")
+            self._db["member"].drop(True)
+            self._db.create_table("member", {"name": str, "pm_is_allowed": bool}, pk="id", not_null={"name", "pm_is_allowed"}, defaults={"pm_is_allowed": False})
+            for row in self._db.table("member_tmp").rows:
+                self._db["member"].insert(row)
+                logging.info(f"Moving row {row} from tmp member table")
+            self._db["member_tmp"].drop(True)
+
         if "player" not in db_tables:
             self._db.create_table("player", {"name": str}, pk="id", not_null={"name"})
         if "notification_channel" in db_tables or "channel" not in db_tables:
-            self._db.create_table("channel", {"guild_id": int, "channel_id": int, "kind": str}, pk="id", not_null={"guild_id", "channel_id", "kind"}, defaults={"kind": "epic"})
-            self._db["channel"].create_index(("guild_id", "channel_id", "kind"), unique=True)
+            try:
+                self._db.create_table("channel", {"guild_id": int, "channel_id": int, "kind": str}, pk="id", not_null={"guild_id", "channel_id", "kind"}, defaults={"kind": "epic"})
+                self._db["channel"].create_index(("guild_id", "channel_id", "kind"), unique=True)
+            except:
+                pass
             for row in self._db.table("notification_channel").rows:
-                self._db["channel"].insert(**row)
+                self._db["channel"].insert(row)
         if "role_mapping" not in db_tables:
             self._db.create_table("role_mapping", {"channel_id": int, "division": int, "role_id": int}, pk="id", not_null={"channel_id", "division", "role_id"})
             self._db["role_mapping"].add_foreign_key("channel_id", "channel", "id")
@@ -87,7 +103,7 @@ class DiscordDB:
 
     # Member methods
 
-    def get_member(self, member_id) -> Optional[Dict[str, Union[int, str]]]:
+    def get_member(self, member_id) -> Dict[str, Union[int, str]]:
         """Get discord member
 
         :param member_id: int Discord Member ID
@@ -98,7 +114,7 @@ class DiscordDB:
         try:
             return self.member.get(member_id)
         except NotFoundError:
-            return
+            return {}
 
     def add_member(self, id: int, name: str, pm_is_allowed: bool = False) -> Dict[str, Union[int, str]]:
         """Add discord member.

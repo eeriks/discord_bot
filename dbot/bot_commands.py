@@ -12,6 +12,11 @@ __all__ = ["bot"]
 bot = commands.Bot(command_prefix="!")
 
 
+def _process_member(member):
+    if not DB.get_member(member.id):
+        DB.add_member(member.id, str(member))
+
+
 async def control_register(ctx, *args):
     if " ".join(args) == "From AF With Love!":
         DB.update_member(ctx.author.id, str(ctx.author), True)
@@ -68,8 +73,9 @@ async def on_ready():
 
 
 @bot.command()
-async def empty(ctx, division, minutes: int = 60):
-    if not ctx.channel.id == 603527159109124096 or not DB.get_member(ctx.message.author.id).get("pm_is_allowed"):
+async def empty(ctx, division, minutes: int = 0):
+    _process_member(ctx.message.author)
+    if not (ctx.channel.id == 603527159109124096 or DB.get_member(ctx.message.author.id).get("pm_is_allowed")):
         return await ctx.send("Currently unavailable!")
     try:
         div = int(division)
@@ -107,8 +113,7 @@ async def division_error(ctx, error):
 
 @bot.command()
 async def control(ctx: commands.Context, command: str, *args):
-    if not DB.get_member(ctx.author.id):
-        DB.add_member(ctx.author.id, str(ctx.author))
+    _process_member(ctx.message.author)
     if command == "register":
         return await control_register(ctx, *args)
     if command in ["notify", "unnotify"]:
@@ -173,3 +178,4 @@ async def control(ctx: commands.Context, command: str, *args):
 async def control_error(ctx, error):
     logger.exception(error, exc_info=error)
     return await ctx.send(MESSAGES["command_failed"])
+
