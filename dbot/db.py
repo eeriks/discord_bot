@@ -20,6 +20,7 @@ class DiscordDB:
         self.rss_feed = self._db.table("rss_feed")
         self.channel = self._db.table("channel")
         self.role_mapping = self._db.table("role_mapping")
+        self.battleorder = self._db.table("battleorder")
 
     def initialize(self):
         hard_tables = ["member", "player", "channel", "role_mapping"]
@@ -59,6 +60,7 @@ class DiscordDB:
 
         self._db.create_table("division", {"division_id": int, "epic": bool, "empty": bool}, pk="id", defaults={"epic": False, "empty": False}, not_null={"division_id"})
         self._db.create_table("rss_feed", {"timestamp": float}, pk="id", not_null={"timestamp"})
+        self._db.create_table("battleorder", {"battle_id": int, "side": int}, pk="id", not_null={"battle_id","side"}, defaults={"side":71})
 
         self._db.vacuum()
 
@@ -277,3 +279,25 @@ class DiscordDB:
         rows = self.role_mapping.rows_where("channel_id = ? and division = ?", (ch_id, division))
         for row in rows:
             return row["role_id"]
+
+    def set_battle_order(self, battle_id:int, side:int):
+        if self.get_battle_order(battle_id):
+            return False
+        self.battleorder.insert(dict(battle_id=battle_id, side=side))
+        return True
+
+    def get_battle_order(self, battle_id: int = None):
+        if battle_id is None:
+            return list(sef.battleorder.rows)
+        try:
+            row = next(self.battleorder.rows_where('battle_id = ?', (battle_id,)))
+            return row
+        except StopIterationError:
+            return
+
+    def delete_battle_order(self, battle_id: int):
+        bo = self.get_battle_order(battle_id)
+        if bo:
+            DB.battleorder.delete(bo['id'])
+            return True
+        return False

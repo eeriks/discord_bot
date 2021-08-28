@@ -64,6 +64,31 @@ async def control_mention_remove(ctx, kind: str, division: str):
     return await ctx.send(MESSAGES["nothing_to_do"])
 
 
+async def control_order_set(ctx, battle_id, side):
+    if not DB.get_battle_order(battle_id):
+        side_id = None
+        try:
+            side_id = COUNTRIES[int(side)].id
+        except (ValueError, KeyError):
+            try:
+                side_id = [c for c in COUNTRIES.values() if side.lower() in repr(c).lower()][0].id
+            except IndexError:
+                return await ctx.send(MESSAGES["command_failed"])
+        DB.set_battle_order(battle_id, side_id)
+        return await ctx.send(f"✅ Order has been set! {COUNTIRES[side_id].name} must win")
+    return await ctx.send(MESSAGES["nothing_to_do"])
+
+async def control_order_unset(ctx, battle_id):
+    if DB.delete_battle_order(battle_id):
+        return await ctx.send(f"✅ Order has been unset!")
+    return await ctx.send(MESSAGES["nothing_to_do"])
+
+
+async def control_order(ctx, action, *args):
+    if action == "set":
+        return await control_order_set(ctx, *args)
+    return await ctx.send(MESSAGES["nothing_to_do"])
+
 @bot.event
 async def on_ready():
     logger.info("Bot loaded")
