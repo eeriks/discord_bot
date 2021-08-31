@@ -1,8 +1,9 @@
+import asyncio
 import logging
 import os
 import sys
 
-from db import DiscordDB
+from dbot.db import DiscordDB
 
 APP_NAME = "discord_bot"
 
@@ -22,6 +23,7 @@ stream_logger = logging.StreamHandler()
 stream_logger.setLevel(logging.DEBUG)
 stream_logger.setFormatter(formatter)
 logger.addHandler(stream_logger)
+logger.propagate = False
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEFAULT_CHANNEL_ID = os.getenv("DEFAULT_CHANNEL_ID", 603527159109124096)
@@ -29,6 +31,7 @@ ADMIN_ID = os.getenv("ADMIN_ID", 220849530730577920)
 DB_NAME = os.getenv("DB_NAME", "discord.db")
 PRODUCTION = bool(os.getenv("PRODUCTION"))
 DB = DiscordDB(DB_NAME)
+DB.load_base_data()
 
 
 MENTION_MAPPING = {1: "D1", 2: "D2", 3: "D3", 4: "D4", 11: "Air"}
@@ -52,3 +55,5 @@ MESSAGES = dict(
     notifications_unset="✅ I won't notify about {} in this channel!",
     notifications_set="✅ I will notify about {} in this channel!",
 )
+
+LOOP = loop = asyncio.get_event_loop()

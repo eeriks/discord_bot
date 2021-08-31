@@ -1,6 +1,8 @@
 import logging
+import time
 from typing import Dict, List, Optional, Union
 
+from erepublik.constants import COUNTRIES
 from sqlite_utils import Database
 from sqlite_utils.db import NotFoundError
 
@@ -10,6 +12,7 @@ class DiscordDB:
     _db: Database
 
     def __init__(self, db_name: str = ""):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self._db = Database(db_name) if db_name else Database(memory=True)
 
         self.initialize()
@@ -31,12 +34,12 @@ class DiscordDB:
             self._db.create_table("member_tmp", {"name": str, "pm_is_allowed": bool}, pk="id", not_null={"name", "pm_is_allowed"}, defaults={"pm_is_allowed": False})
             for row in self._db.table("member").rows:
                 self._db["member_tmp"].insert(row)
-                logging.info(f"Moving row {row} to tmp member table")
+                self.logger.info(f"Moving row {row} to tmp member table")
             self._db["member"].drop(True)
             self._db.create_table("member", {"name": str, "pm_is_allowed": bool}, pk="id", not_null={"name", "pm_is_allowed"}, defaults={"pm_is_allowed": False})
             for row in self._db.table("member_tmp").rows:
                 self._db["member"].insert(row)
-                logging.info(f"Moving row {row} from tmp member table")
+                self.logger.info(f"Moving row {row} from tmp member table")
             self._db["member_tmp"].drop(True)
 
         if "player" not in db_tables:
@@ -45,7 +48,7 @@ class DiscordDB:
             try:
                 self._db.create_table("channel", {"guild_id": int, "channel_id": int, "kind": str}, pk="id", not_null={"guild_id", "channel_id", "kind"}, defaults={"kind": "epic"})
                 self._db["channel"].create_index(("guild_id", "channel_id", "kind"), unique=True)
-            except:
+            except Exception:
                 pass
             for row in self._db.table("notification_channel").rows:
                 self._db["channel"].insert(row)
@@ -53,16 +56,30 @@ class DiscordDB:
             self._db.create_table("role_mapping", {"channel_id": int, "division": int, "role_id": int}, pk="id", not_null={"channel_id", "division", "role_id"})
             self._db["role_mapping"].add_foreign_key("channel_id", "channel", "id")
             self._db["role_mapping"].create_index(("channel_id", "division"), unique=True)
-
+        else:
+            for row in self._db["role_mapping"].rows:
+                try:
+                    self._db["channel"].get(row["channel_id"])
+                except NotFoundError:
+                    if any(self._db["channel"].rows_where("channel_id = ?", (row["channel_id"],))):
+                        self._db["role_mapping"].update(row["id"], {"channel_id": next(self._db["channel"].rows_where("channel_id = ?", (row["channel_id"],)))["id"]})
+                    else:
+                        self.logger.warning(f"RoleMapping contained unknown channel id {row['channel_id']}!")
+                        self.logger.warning(f"DELETED:{row=}")
+                        self._db["role_mapping"].delete(row["id"])
         for table in self._db.table_names():
             if table not in hard_tables:
                 self._db.table(table).drop(ignore=True)
 
         self._db.create_table("division", {"division_id": int, "epic": bool, "empty": bool}, pk="id", defaults={"epic": False, "empty": False}, not_null={"division_id"})
         self._db.create_table("rss_feed", {"timestamp": float}, pk="id", not_null={"timestamp"})
-        self._db.create_table("battleorder", {"battle_id": int, "side": int}, pk="id", not_null={"battle_id","side"}, defaults={"side":71})
+        self._db.create_table("battleorder", {"battle_id": int, "side": int}, pk="id", not_null={"battle_id", "side"}, defaults={"side": 71})
 
         self._db.vacuum()
+
+    def load_base_data(self):
+        for country_id in COUNTRIES.keys():
+            self.set_rss_feed_timestamp(country_id, time.time())
 
     # Player methods
 
@@ -158,10 +175,7 @@ class DiscordDB:
         :param division_id: int Division ID
         :return: bool
         """
-        try:
-            return bool(next(self.division.rows_where("division_id = ? and epic = ?", (division_id, True))))
-        except StopIteration:
-            return False
+        return any(self.division.rows_where("division_id = ? and epic = ?", (division_id, True)))
 
     def add_epic(self, division_id: int) -> bool:
         """Register epic in division.
@@ -280,7 +294,7 @@ class DiscordDB:
         for row in rows:
             return row["role_id"]
 
-    def set_battle_order(self, battle_id:int, side:int):
+    def set_battle_order(self, battle_id: int, side: int):
         if self.get_battle_order(battle_id):
             return False
         self.battleorder.insert(dict(battle_id=battle_id, side=side))
@@ -288,16 +302,16 @@ class DiscordDB:
 
     def get_battle_order(self, battle_id: int = None):
         if battle_id is None:
-            return list(sef.battleorder.rows)
+            return list(self.battleorder.rows)
         try:
-            row = next(self.battleorder.rows_where('battle_id = ?', (battle_id,)))
+            row = next(self.battleorder.rows_where("battle_id = ?", (battle_id,)))
             return row
-        except StopIterationError:
+        except StopIteration:
             return
 
     def delete_battle_order(self, battle_id: int):
         bo = self.get_battle_order(battle_id)
         if bo:
-            DB.battleorder.delete(bo['id'])
+            self.battleorder.delete(bo["id"])
             return True
         return False

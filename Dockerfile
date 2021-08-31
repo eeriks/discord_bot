@@ -9,8 +9,9 @@ RUN groupadd -g 1000 discordbot \
  && chmod +x /run.sh
 
 USER discordbot
+ENV PATH=$PATH:/home/discordbot/.local/bin
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r requirements.txt
 ENV PYTHONPATH=$PYTHONPATH:/app/dbot
 #CMD python discord_bot.py
-ENTRYPOINT ["/usr/local/bin/python", "/app/dbot/discord_bot.py"]
+ENTRYPOINT ["/usr/local/bin/python", "/app/dbot/main.py"]

@@ -12,7 +12,7 @@ if test !$D ; then
   disown -h %1
   sleep 10
 else
-  /usr/local/bin/python /app/discord_bot.py
+  /usr/local/bin/python /app/main.py
 fi
 echo "Done!"
 

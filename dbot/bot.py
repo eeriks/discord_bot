@@ -3,13 +3,14 @@ import sys
 from discord import Embed
 from discord.enums import ChannelType
 from discord.ext import commands
+from erepublik.constants import COUNTRIES
 
-from dbot.base import ADMIN_ID, DB, DIVISION_MAPPING, MESSAGES, NOTIFICATION_KINDS, logger
+from dbot.base import ADMIN_ID, DB, DIVISION_MAPPING, LOOP, MESSAGES, NOTIFICATION_KINDS, logger
 from dbot.utils import check_battles, get_battle_page
 
-__all__ = ["bot"]
+__all__ = ["DiscordBot"]
 
-bot = commands.Bot(command_prefix="!")
+bot = DiscordBot = commands.Bot(command_prefix="!", loop=LOOP)
 
 
 def _process_member(member):
@@ -75,12 +76,13 @@ async def control_order_set(ctx, battle_id, side):
             except IndexError:
                 return await ctx.send(MESSAGES["command_failed"])
         DB.set_battle_order(battle_id, side_id)
-        return await ctx.send(f"✅ Order has been set! {COUNTIRES[side_id].name} must win")
+        return await ctx.send(f"✅ Order has been set! {COUNTRIES[side_id].name} must win")
     return await ctx.send(MESSAGES["nothing_to_do"])
+
 
 async def control_order_unset(ctx, battle_id):
     if DB.delete_battle_order(battle_id):
-        return await ctx.send(f"✅ Order has been unset!")
+        return await ctx.send("✅ Order has been unset!")
     return await ctx.send(MESSAGES["nothing_to_do"])
 
 
@@ -88,6 +90,7 @@ async def control_order(ctx, action, *args):
     if action == "set":
         return await control_order_set(ctx, *args)
     return await ctx.send(MESSAGES["nothing_to_do"])
+
 
 @bot.event
 async def on_ready():
@@ -203,4 +206,3 @@ async def control(ctx: commands.Context, command: str, *args):
 async def control_error(ctx, error):
     logger.exception(error, exc_info=error)
     return await ctx.send(MESSAGES["command_failed"])
-

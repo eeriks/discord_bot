@@ -1,5 +1,6 @@
 import feedparser
-from constants import COUNTRIES, events
+
+from dbot.constants import COUNTRIES, events
 
 
 def main(country):

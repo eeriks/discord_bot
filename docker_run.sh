@@ -1,4 +1,11 @@
 #!/bin/sh
+
+sh ./lint.sh
+ret=$?
+if test $ret != 0; then
+  exit 1
+fi
+
 docker rm -f discord_bot
 set -e
 docker build --tag discord_epicbot .
